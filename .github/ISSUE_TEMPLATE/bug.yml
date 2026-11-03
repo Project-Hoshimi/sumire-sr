@@ -1,0 +1,74 @@
+name: Bug report
+description: Report a reproducible defect in the server, protocol, toolchain, or client helpers
+title: "[bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not include game data, captures, keys, player data, personal paths, device serials, or IP addresses. Report security issues privately via SECURITY.md.
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      options:
+        - packages/server
+        - packages/protocol
+        - toolchain
+        - client
+        - docker / CI / docs
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Version or commit
+      description: Commit SHA, branch, or release.
+      placeholder: "main @ abc1234"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: profile
+    attributes:
+      label: Profile
+      options:
+        - sandbox
+        - official
+        - not applicable
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Minimal, ordered steps.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behaviour
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behaviour
+      description: Include the relevant error text or log lines. Redact secrets and personal data.
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Node version, OS, PostgreSQL version, and client version where relevant.
+      placeholder: "Node 22.x, macOS 15, PostgreSQL 18, client 6.0.2"
+    validations:
+      required: false

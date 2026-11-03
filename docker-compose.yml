@@ -1,0 +1,45 @@
+name: sumire-sr
+
+services:
+  postgres:
+    image: postgres:18
+    environment:
+      POSTGRES_USER: idoly
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-idoly_dev_pw}
+      POSTGRES_DB: idoly
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U idoly -d idoly"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  server:
+    image: node:22
+    working_dir: /workspace
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://idoly:${POSTGRES_PASSWORD:-idoly_dev_pw}@postgres:5432/idoly
+      SUMIRE_PROFILE: ${SUMIRE_PROFILE:-sandbox}
+      SUMIRE_DATA_DIR: /data
+      WIRE_SEC_KEY: ${WIRE_SEC_KEY:-}
+      JWT_PRIVATE_KEY_PATH: /workspace/keys/jwt-private.pem
+      PORT: "8080"
+    ports:
+      - "8080:8080"
+    volumes:
+      - .:/workspace
+      - server_node_modules:/workspace/node_modules
+      - ${SUMIRE_DATA_DIR:-./data}:/data:ro
+    command: sh -c "npm install && npm run -w packages/server dev"
+    init: true
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  server_node_modules:

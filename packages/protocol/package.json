@@ -1,0 +1,15 @@
+{
+  "name": "@sumire-sr/protocol",
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    "./gen/*": "./src/gen/*",
+    "./runtime/*": "./src/runtime/*",
+    "./schemas/*": "./schemas/*",
+    "./crypto": "./src/crypto.cjs"
+  },
+  "scripts": {
+    "gen": "node codegen/gen.mjs",
+    "test:crypto": "node test/test_crypto.cjs"
+  }
+}

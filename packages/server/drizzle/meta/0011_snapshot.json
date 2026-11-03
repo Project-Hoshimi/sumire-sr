@@ -1,0 +1,5438 @@
+{
+  "id": "0427e605-4162-44d5-a6d8-c8d77b929f5d",
+  "prevId": "e3dd9c2d-9037-4af2-8131-ae849c8db90e",
+  "version": "7",
+  "dialect": "postgresql",
+  "tables": {
+    "public.accounts": {
+      "name": "accounts",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "firebase_uid": {
+          "name": "firebase_uid",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "seed_id": {
+          "name": "seed_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "display_name": {
+          "name": "display_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "last_login_at": {
+          "name": "last_login_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "is_banned": {
+          "name": "is_banned",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        }
+      },
+      "indexes": {
+        "accounts_firebase_uid_idx": {
+          "name": "accounts_firebase_uid_idx",
+          "columns": [
+            {
+              "expression": "firebase_uid",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.deck_configurations": {
+      "name": "deck_configurations",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "player_id": {
+          "name": "player_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "deck_number": {
+          "name": "deck_number",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "leader_card_id": {
+          "name": "leader_card_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "member_card_ids": {
+          "name": "member_card_ids",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'[]'::jsonb"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "deck_player_number_idx": {
+          "name": "deck_player_number_idx",
+          "columns": [
+            {
+              "expression": "player_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "deck_number",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "deck_configurations_player_id_players_id_fk": {
+          "name": "deck_configurations_player_id_players_id_fk",
+          "tableFrom": "deck_configurations",
+          "tableTo": "players",
+          "columnsFrom": [
+            "player_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.gacha_history": {
+      "name": "gacha_history",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "player_id": {
+          "name": "player_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "gacha_master_id": {
+          "name": "gacha_master_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "draw_count": {
+          "name": "draw_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "cost_type": {
+          "name": "cost_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "cost_amount": {
+          "name": "cost_amount",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "drawn_at": {
+          "name": "drawn_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "results": {
+          "name": "results",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'[]'::jsonb"
+        }
+      },
+      "indexes": {
+        "gacha_history_player_idx": {
+          "name": "gacha_history_player_idx",
+          "columns": [
+            {
+              "expression": "player_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "gacha_history_player_id_players_id_fk": {
+          "name": "gacha_history_player_id_players_id_fk",
+          "tableFrom": "gacha_history",
+          "tableTo": "players",
+          "columnsFrom": [
+            "player_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.idol_roster": {
+      "name": "idol_roster",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "player_id": {
+          "name": "player_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "master_id": {
+          "name": "master_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "level": {
+          "name": "level",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1
+        },
+        "affection": {
+          "name": "affection",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idol_roster_player_master_idx": {
+          "name": "idol_roster_player_master_idx",
+          "columns": [
+            {
+              "expression": "player_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "master_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "idol_roster_player_id_players_id_fk": {
+          "name": "idol_roster_player_id_players_id_fk",
+          "tableFrom": "idol_roster",
+          "tableTo": "players",
+          "columnsFrom": [
+            "player_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.live_stage_progress": {
+      "name": "live_stage_progress",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "player_id": {
+          "name": "player_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "stage_master_id": {
+          "name": "stage_master_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "high_score": {
+          "name": "high_score",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "best_rank": {
+          "name": "best_rank",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "cleared": {
+          "name": "cleared",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "full_combo": {
+          "name": "full_combo",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "clear_count": {
+          "name": "clear_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "live_stage_player_master_idx": {
+          "name": "live_stage_player_master_idx",
+          "columns": [
+            {
+              "expression": "player_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "stage_master_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "live_stage_progress_player_id_players_id_fk": {
+          "name": "live_stage_progress_player_id_players_id_fk",
+          "tableFrom": "live_stage_progress",
+          "tableTo": "players",
+          "columnsFrom": [
+            "player_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.owned_cards": {
+      "name": "owned_cards",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "player_id": {
+          "name": "player_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "master_id": {
+          "name": "master_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "level": {
+          "name": "level",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1
+        },
+        "exp": {
+          "name": "exp",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "limit_break_phase": {
+          "name": "limit_break_phase",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "skill_level": {
+          "name": "skill_level",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1
+        },
+        "duplicated_count": {
+          "name": "duplicated_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "attachment": {
+          "name": "attachment",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "gacha_history_id": {
+          "name": "gacha_history_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "owned_cards_player_idx": {
+          "name": "owned_cards_player_idx",
+          "columns": [
+            {
+              "expression": "player_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "owned_cards_player_id_players_id_fk": {
+          "name": "owned_cards_player_id_players_id_fk",
+          "tableFrom": "owned_cards",
+          "tableTo": "players",
+          "columnsFrom": [
+            "player_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.player_box_gacha": {
+      "name": "player_box_gacha",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "player_id": {
+          "name": "player_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "marathon_id": {
+          "name": "marathon_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "box_gacha_id": {
+          "name": "box_gacha_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "drawn_count": {
+          "name": "drawn_count",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "reset_count": {
+          "name": "reset_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "player_box_gacha_player_box_idx": {
+          "name": "player_box_gacha_player_box_idx",
+          "columns": [
+            {
+              "expression": "player_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "box_gacha_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "player_box_gacha_player_id_players_id_fk": {
+          "name": "player_box_gacha_player_id_players_id_fk",
+          "tableFrom": "player_box_gacha",
+          "tableTo": "players",
+          "columnsFrom": [
+            "player_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.player_entities": {
+      "name": "player_entities",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "player_id": {
+          "name": "player_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "kind": {
+          "name": "kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "entity_key": {
+          "name": "entity_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "ordinal": {
+          "name": "ordinal",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "blob": {
+          "name": "blob",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "player_entities_player_kind_ordinal_idx": {
+          "name": "player_entities_player_kind_ordinal_idx",
+          "columns": [
+            {
+              "expression": "player_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "kind",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "ordinal",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "player_entities_player_kind_idx": {
+          "name": "player_entities_player_kind_idx",
+          "columns": [
+            {
+              "expression": "player_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "kind",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "player_entities_player_id_players_id_fk": {
+          "name": "player_entities_player_id_players_id_fk",
+          "tableFrom": "player_entities",
+          "tableTo": "players",
+          "columnsFrom": [
+            "player_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.player_gacha_state": {
+      "name": "player_gacha_state",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "player_id": {
+          "name": "player_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "gacha_id": {
+          "name": "gacha_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "selected_card_ids": {
+          "name": "selected_card_ids",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'[]'::jsonb"
+        },
+        "stamp_sheet_number": {
+          "name": "stamp_sheet_number",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "stamp_number": {
+          "name": "stamp_number",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "total_draw_count": {
+          "name": "total_draw_count",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "premium_draw_count": {
+          "name": "premium_draw_count",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "free_ticket_claimed": {
+          "name": "free_ticket_claimed",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "exchange_counts": {
+          "name": "exchange_counts",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'::jsonb"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "player_gacha_state_player_gacha_idx": {
+          "name": "player_gacha_state_player_gacha_idx",
+          "columns": [
+            {
+              "expression": "player_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "gacha_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "player_gacha_state_player_id_players_id_fk": {
+          "name": "player_gacha_state_player_id_players_id_fk",
+          "tableFrom": "player_gacha_state",
+          "tableTo": "players",
+          "columnsFrom": [
+            "player_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.player_ledger": {
+      "name": "player_ledger",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "player_id": {
+          "name": "player_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "resource_type": {
+          "name": "resource_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "resource_id": {
+          "name": "resource_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "delta": {
+          "name": "delta",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "reason": {
+          "name": "reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "ref_id": {
+          "name": "ref_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "player_ledger_player_idx": {
+          "name": "player_ledger_player_idx",
+          "columns": [
+            {
+              "expression": "player_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "player_ledger_player_id_players_id_fk": {
+          "name": "player_ledger_player_id_players_id_fk",
+          "tableFrom": "player_ledger",
+          "tableTo": "players",
+          "columnsFrom": [
+            "player_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.player_love_progress": {
+      "name": "player_love_progress",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "player_id": {
+          "name": "player_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "love_id": {
+          "name": "love_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "exp": {
+          "name": "exp",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "last_receive_time": {
+          "name": "last_receive_time",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "read_episode_ids": {
+          "name": "read_episode_ids",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'[]'::jsonb"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "player_love_progress_player_love_idx": {
+          "name": "player_love_progress_player_love_idx",
+          "columns": [
+            {
+              "expression": "player_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "love_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "player_love_progress_player_id_players_id_fk": {
+          "name": "player_love_progress_player_id_players_id_fk",
+          "tableFrom": "player_love_progress",
+          "tableTo": "players",
+          "columnsFrom": [
+            "player_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.player_marathon_point": {
+      "name": "player_marathon_point",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "player_id": {
+          "name": "player_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "marathon_id": {
+          "name": "marathon_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "point": {
+          "name": "point",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "player_marathon_point_player_marathon_idx": {
+          "name": "player_marathon_point_player_marathon_idx",
+          "columns": [
+            {
+              "expression": "player_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "marathon_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "player_marathon_point_player_id_players_id_fk": {
+          "name": "player_marathon_point_player_id_players_id_fk",
+          "tableFrom": "player_marathon_point",
+          "tableTo": "players",
+          "columnsFrom": [
+            "player_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.player_purchases": {
+      "name": "player_purchases",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "player_id": {
+          "name": "player_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "kind": {
+          "name": "kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "item_key": {
+          "name": "item_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "count": {
+          "name": "count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "player_purchases_key_idx": {
+          "name": "player_purchases_key_idx",
+          "columns": [
+            {
+              "expression": "player_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "kind",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "item_key",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "player_purchases_player_id_players_id_fk": {
+          "name": "player_purchases_player_id_players_id_fk",
+          "tableFrom": "player_purchases",
+          "tableTo": "players",
+          "columnsFrom": [
+            "player_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.players": {
+      "name": "players",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "account_id": {
+          "name": "account_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "level": {
+          "name": "level",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1
+        },
+        "exp": {
+          "name": "exp",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "gold": {
+          "name": "gold",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "free_jewel": {
+          "name": "free_jewel",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "paid_jewel": {
+          "name": "paid_jewel",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "stamina": {
+          "name": "stamina",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "stamina_max": {
+          "name": "stamina_max",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "last_stamina_at": {
+          "name": "last_stamina_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "data": {
+          "name": "data",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'::jsonb"
+        }
+      },
+      "indexes": {
+        "players_account_id_idx": {
+          "name": "players_account_id_idx",
+          "columns": [
+            {
+              "expression": "account_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "players_account_id_accounts_id_fk": {
+          "name": "players_account_id_accounts_id_fk",
+          "tableFrom": "players",
+          "tableTo": "accounts",
+          "columnsFrom": [
+            "account_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.reward_claims": {
+      "name": "reward_claims",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "player_id": {
+          "name": "player_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "source_type": {
+          "name": "source_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "source_id": {
+          "name": "source_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "claimed_at": {
+          "name": "claimed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "reward_claims_player_source_idx": {
+          "name": "reward_claims_player_source_idx",
+          "columns": [
+            {
+              "expression": "player_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "source_type",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "source_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "reward_claims_player_id_players_id_fk": {
+          "name": "reward_claims_player_id_players_id_fk",
+          "tableFrom": "reward_claims",
+          "tableTo": "players",
+          "columnsFrom": [
+            "player_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.server_meta": {
+      "name": "server_meta",
+      "schema": "",
+      "columns": {
+        "key": {
+          "name": "key",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "value": {
+          "name": "value",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.master_Accessory": {
+      "name": "master_Accessory",
+      "schema": "",
+      "columns": {
+        "Id": {
+          "name": "Id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "Classification": {
+          "name": "Classification",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "Rarity": {
+          "name": "Rarity",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "Name": {
+          "name": "Name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "CategoryType": {
+          "name": "CategoryType",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "Param1Type": {
+          "name": "Param1Type",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "Param1Value": {
+          "name": "Param1Value",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "SalePrice": {
+          "name": "SalePrice",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "master_accessory_id_idx": {
+          "name": "master_accessory_id_idx",
+          "columns": [
+            {
+              "expression": "Id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.master_AccessoryEnhancement": {
+      "name": "master_AccessoryEnhancement",
+      "schema": "",
+      "columns": {
+        "Rarity": {
+          "name": "Rarity",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "RequiredGold": {
+          "name": "RequiredGold",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "master_accessory_enhancement_key_idx": {
+          "name": "master_accessory_enhancement_key_idx",
+          "columns": [
+            {
+              "expression": "Rarity",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.master_ActivityAbility": {
+      "name": "master_ActivityAbility",
+      "schema": "",
+      "columns": {
+        "Id": {
+          "name": "Id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "Name": {
+          "name": "Name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "Levels": {
+          "name": "Levels",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "master_activity_ability_id_idx": {
+          "name": "master_activity_ability_id_idx",
+          "columns": [
+            {
+              "expression": "Id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.master_BoxGacha": {
+      "name": "master_BoxGacha",
+      "schema": "",
+      "columns": {
+        "Id": {
+          "name": "Id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "BoxGachaGroupId": {
+          "name": "BoxGachaGroupId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "Name": {
+          "name": "Name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "UnlockConditionId": {
+          "name": "UnlockConditionId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "RequiredResourceAmount": {
+          "name": "RequiredResourceAmount",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "CanReset": {
+          "name": "CanReset",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "ResetLimitCount": {
+          "name": "ResetLimitCount",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "master_box_gacha_id_idx": {
+          "name": "master_box_gacha_id_idx",
+          "columns": [
+            {
+              "expression": "Id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.master_BoxGachaGroup": {
+      "name": "master_BoxGachaGroup",
+      "schema": "",
+      "columns": {
+        "Id": {
+          "name": "Id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "RequiredResourceType": {
+          "name": "RequiredResourceType",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "RequiredResourceId": {
+          "name": "RequiredResourceId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "master_box_gacha_group_id_idx": {
+          "name": "master_box_gacha_group_id_idx",
+          "columns": [
+            {
+              "expression": "Id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.master_Card": {
+      "name": "master_Card",
+      "schema": "",
+      "columns": {
+        "Id": {
+          "name": "Id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "AssetId": {
+          "name": "AssetId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "Name": {
+          "name": "Name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "Description": {
+          "name": "Description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "Type": {
+          "name": "Type",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "CharacterId": {
+          "name": "CharacterId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "InitialRarity": {
+          "name": "InitialRarity",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "CardParameterId": {
+          "name": "CardParameterId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "VocalRatioPermil": {
+          "name": "VocalRatioPermil",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "DanceRatioPermil": {
+          "name": "DanceRatioPermil",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "VisualRatioPermil": {
+          "name": "VisualRatioPermil",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "StaminaRatioPermil": {
+          "name": "StaminaRatioPermil",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "CardLevelReleaseId": {
+          "name": "CardLevelReleaseId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "SkillId1": {
+          "name": "SkillId1",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "SkillId2": {
+          "name": "SkillId2",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "SkillId3": {
+          "name": "SkillId3",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "LiveAbilityId": {
+          "name": "LiveAbilityId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "ActivityAbilityId": {
+          "name": "ActivityAbilityId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "Order": {
+          "name": "Order",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "ReleaseDate": {
+          "name": "ReleaseDate",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "RewardCostumeId": {
+          "name": "RewardCostumeId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "RewardHairIds": {
+          "name": "RewardHairIds",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "ObtainMessage": {
+          "name": "ObtainMessage",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "RewardHairId": {
+          "name": "RewardHairId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "CardEvolutionLevelReleaseGroupId": {
+          "name": "CardEvolutionLevelReleaseGroupId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "CardEvolutionLevelGroupId": {
+          "name": "CardEvolutionLevelGroupId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "SkillId4": {
+          "name": "SkillId4",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "Stories": {
+          "name": "Stories",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "Messages": {
+          "name": "Messages",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "HomeTalks": {
+          "name": "HomeTalks",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "master_card_id_idx": {
+          "name": "master_card_id_idx",
+          "columns": [
+            {
+              "expression": "Id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.master_CardDuplicateReward": {
+      "name": "master_CardDuplicateReward",
+      "schema": "",
+      "columns": {
+        "InitialRarity": {
+          "name": "InitialRarity",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "CurrentRarity": {
+          "name": "CurrentRarity",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "RewardId": {
+          "name": "RewardId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "master_card_duplicate_reward_key_idx": {
+          "name": "master_card_duplicate_reward_key_idx",
+          "columns": [
+            {
+              "expression": "InitialRarity",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "CurrentRarity",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.master_CardEvolution": {
+      "name": "master_CardEvolution",
+      "schema": "",
+      "columns": {
+        "CardId": {
+          "name": "CardId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "EvolutionLevel": {
+          "name": "EvolutionLevel",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "RewardCostumeId": {
+          "name": "RewardCostumeId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "RewardHairId": {
+          "name": "RewardHairId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "master_card_evolution_key_idx": {
+          "name": "master_card_evolution_key_idx",
+          "columns": [
+            {
+              "expression": "CardId",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "EvolutionLevel",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.master_CardEvolutionLevel": {
+      "name": "master_CardEvolutionLevel",
+      "schema": "",
+      "columns": {
+        "GroupId": {
+          "name": "GroupId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "Level": {
+          "name": "Level",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "Exp": {
+          "name": "Exp",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "DuplicateObtainExp": {
+          "name": "DuplicateObtainExp",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "master_card_evolution_level_key_idx": {
+          "name": "master_card_evolution_level_key_idx",
+          "columns": [
+            {
+              "expression": "GroupId",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "Level",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.master_CardEvolutionLevelRelease": {
+      "name": "master_CardEvolutionLevelRelease",
+      "schema": "",
+      "columns": {
+        "GroupId": {
+          "name": "GroupId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "Level": {
+          "name": "Level",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "Targets": {
+          "name": "Targets",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "master_card_evolution_level_release_key_idx": {
+          "name": "master_card_evolution_level_release_key_idx",
+          "columns": [
+            {
+              "expression": "GroupId",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "Level",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.master_CardEvolutionMessage": {
+      "name": "master_CardEvolutionMessage",
+      "schema": "",
+      "columns": {
+        "CardId": {
+          "name": "CardId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "EvolutionLevel": {
+          "name": "EvolutionLevel",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "Number": {
+          "name": "Number",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "CharacterId": {
+          "name": "CharacterId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "EvolveMessage": {
+          "name": "EvolveMessage",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "VoiceAssetId": {
+          "name": "VoiceAssetId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "master_card_evolution_message_key_idx": {
+          "name": "master_card_evolution_message_key_idx",
+          "columns": [
+            {
+              "expression": "CardId",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "EvolutionLevel",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "Number",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.master_CardLevel": {
+      "name": "master_CardLevel",
+      "schema": "",
+      "columns": {
+        "Level": {
+          "name": "Level",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "RequiredExp": {
+          "name": "RequiredExp",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "master_card_level_key_idx": {
+          "name": "master_card_level_key_idx",
+          "columns": [
+            {
+              "expression": "Level",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.master_CardParameter": {
+      "name": "master_CardParameter",
+      "schema": "",
+      "columns": {
+        "Id": {
+          "name": "Id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "Level": {
+          "name": "Level",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "Value": {
+          "name": "Value",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "StaminaValue": {
+          "name": "StaminaValue",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "master_card_parameter_key_idx": {
+          "name": "master_card_parameter_key_idx",
+          "columns": [
+            {
+              "expression": "Id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "Level",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.master_CardRank": {
+      "name": "master_CardRank",
+      "schema": "",
+      "columns": {
+        "Rank": {
+          "name": "Rank",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "IsDataExist": {
+          "name": "IsDataExist",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "LevelLimitUpAmount": {
+          "name": "LevelLimitUpAmount",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "RequiredExp": {
+          "name": "RequiredExp",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "master_card_rank_key_idx": {
+          "name": "master_card_rank_key_idx",
+          "columns": [
+            {
+              "expression": "Rank",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.master_CardRarity": {
+      "name": "master_CardRarity",
+      "schema": "",
+      "columns": {
+        "Rarity": {
+          "name": "Rarity",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "LevelLimit": {
+          "name": "LevelLimit",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "ParameterBonusPermil": {
+          "name": "ParameterBonusPermil",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "RequiredExp": {
+          "name": "RequiredExp",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "master_card_rarity_key_idx": {
+          "name": "master_card_rarity_key_idx",
+          "columns": [
+            {
+              "expression": "Rarity",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.master_CardSupportRelease": {
+      "name": "master_CardSupportRelease",
+      "schema": "",
+      "columns": {
+        "Count": {
+          "name": "Count",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "ItemId": {
+          "name": "ItemId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "ItemAmount": {
+          "name": "ItemAmount",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "StoneAmount": {
+          "name": "StoneAmount",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "master_card_support_release_key_idx": {
+          "name": "master_card_support_release_key_idx",
+          "columns": [
+            {
+              "expression": "Count",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.master_Character": {
+      "name": "master_Character",
+      "schema": "",
+      "columns": {
+        "Id": {
+          "name": "Id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "AssetId": {
+          "name": "AssetId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "Name": {
+          "name": "Name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "EnName": {
+          "name": "EnName",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "Cv": {
+          "name": "Cv",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "Color": {
+          "name": "Color",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "DefaultCostumeId": {
+          "name": "DefaultCostumeId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "LoveInfo": {
+          "name": "LoveInfo",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "LoveInfos": {
+          "name": "LoveInfos",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "master_character_key_idx": {
+          "name": "master_character_key_idx",
+          "columns": [
+            {
+              "expression": "Id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.master_Consumption": {
+      "name": "master_Consumption",
+      "schema": "",
+      "columns": {
+        "Id": {
+          "name": "Id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "Resources": {
+          "name": "Resources",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "master_consumption_id_idx": {
+          "name": "master_consumption_id_idx",
+          "columns": [
+            {
+              "expression": "Id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.master_Costume": {
+      "name": "master_Costume",
+      "schema": "",
+      "columns": {
+        "Id": {
+          "name": "Id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "CharacterId": {
+          "name": "CharacterId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "DefaultHairId": {
+          "name": "DefaultHairId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "Name": {
+          "name": "Name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "Order": {
+          "name": "Order",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "master_costume_id_idx": {
+          "name": "master_costume_id_idx",
+          "columns": [
+            {
+              "expression": "Id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.master_EventMission": {
+      "name": "master_EventMission",
+      "schema": "",
+      "columns": {
+        "Id": {
+          "name": "Id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "EventMissionType": {
+          "name": "EventMissionType",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "AssetId": {
+          "name": "AssetId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "Name": {
+          "name": "Name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "Order": {
+          "name": "Order",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "ViewConditionId": {
+          "name": "ViewConditionId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "UnlockConditionId": {
+          "name": "UnlockConditionId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "MissionIds": {
+          "name": "MissionIds",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "master_event_mission_id_idx": {
+          "name": "master_event_mission_id_idx",
+          "columns": [
+            {
+              "expression": "Id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.master_EventStory": {
+      "name": "master_EventStory",
+      "schema": "",
+      "columns": {
+        "Id": {
+          "name": "Id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "AssetId": {
+          "name": "AssetId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "Name": {
+          "name": "Name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "Description": {
+          "name": "Description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "Order": {
+          "name": "Order",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "ViewConditionId": {
+          "name": "ViewConditionId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "Episodes": {
+          "name": "Episodes",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "master_event_story_id_idx": {
+          "name": "master_event_story_id_idx",
+          "columns": [
+            {
+              "expression": "Id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.master_ExtraStory": {
+      "name": "master_ExtraStory",
+      "schema": "",
+      "columns": {
+        "Id": {
+          "name": "Id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "ExtraStoryPartId": {
+          "name": "ExtraStoryPartId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "AssetId": {
+          "name": "AssetId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "Name": {
+          "name": "Name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "Description": {
+          "name": "Description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "Order": {
+          "name": "Order",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "ViewConditionId": {
+          "name": "ViewConditionId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "UnlockConditionId": {
+          "name": "UnlockConditionId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "Episodes": {
+          "name": "Episodes",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "ExtraStoryType": {
+          "name": "ExtraStoryType",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "IconAssetId": {
+          "name": "IconAssetId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "BackgroundAssetId": {
+          "name": "BackgroundAssetId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "SecretEffectColorCode": {
+          "name": "SecretEffectColorCode",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "master_extra_story_id_idx": {
+          "name": "master_extra_story_id_idx",
+          "columns": [
+            {
+              "expression": "Id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.master_ExtraStoryPart": {
+      "name": "master_ExtraStoryPart",
+      "schema": "",
+      "columns": {
+        "Id": {
+          "name": "Id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "AssetId": {
+          "name": "AssetId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "Name": {
+          "name": "Name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "SubTitle": {
+          "name": "SubTitle",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "NoteText": {
+          "name": "NoteText",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "Order": {
+          "name": "Order",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "Type": {
+          "name": "Type",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "ViewConditionId": {
+          "name": "ViewConditionId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "UnlockConditionId": {
+          "name": "UnlockConditionId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "ExtraStoryIds": {
+          "name": "ExtraStoryIds",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "master_extra_story_part_id_idx": {
+          "name": "master_extra_story_part_id_idx",
+          "columns": [
+            {
+              "expression": "Id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.master_Gacha": {
+      "name": "master_Gacha",
+      "schema": "",
+      "columns": {
+        "Id": {
+          "name": "Id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "AssetId": {
+          "name": "AssetId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "BannerAssetId": {
+          "name": "BannerAssetId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "AppealAssetId": {
+          "name": "AppealAssetId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "MovieAssetId": {
+          "name": "MovieAssetId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "ScreenAssetId": {
+          "name": "ScreenAssetId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "Name": {
+          "name": "Name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "Description": {
+          "name": "Description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "Precaution": {
+          "name": "Precaution",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "GachaType": {
+          "name": "GachaType",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "ViewConditionId": {
+          "name": "ViewConditionId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "UnlockConditionId": {
+          "name": "UnlockConditionId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "PickupCardIds": {
+          "name": "PickupCardIds",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "ExchangeResourceType": {
+          "name": "ExchangeResourceType",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "ExchangeResourceId": {
+          "name": "ExchangeResourceId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "ExchangeBoothId": {
+          "name": "ExchangeBoothId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "Order": {
+          "name": "Order",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "IsPeriodDisplay": {
+          "name": "IsPeriodDisplay",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "AppealText": {
+          "name": "AppealText",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "SelectPickupAmount": {
+          "name": "SelectPickupAmount",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "SelectCardIds": {
+          "name": "SelectCardIds",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "ShopId": {
+          "name": "ShopId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "BgmAssetId": {
+          "name": "BgmAssetId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "ButtonIds": {
+          "name": "ButtonIds",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "ExchangeIds": {
+          "name": "ExchangeIds",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "CardRewards": {
+          "name": "CardRewards",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "master_gacha_id_idx": {
+          "name": "master_gacha_id_idx",
+          "columns": [
+            {
+              "expression": "Id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.master_GachaButton": {
+      "name": "master_GachaButton",
+      "schema": "",
+      "columns": {
+        "Id": {
+          "name": "Id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "Name": {
+          "name": "Name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "Description": {
+          "name": "Description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "IsAnimation": {
+          "name": "IsAnimation",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "ConsumptionId": {
+          "name": "ConsumptionId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "DiscountLimitType": {
+          "name": "DiscountLimitType",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "DiscountCount": {
+          "name": "DiscountCount",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "DiscountConsumptionId": {
+          "name": "DiscountConsumptionId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "DrawCount": {
+          "name": "DrawCount",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "LimitType": {
+          "name": "LimitType",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "LimitCount": {
+          "name": "LimitCount",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "BonusRewardId": {
+          "name": "BonusRewardId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "BonusCount": {
+          "name": "BonusCount",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "Order": {
+          "name": "Order",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "GachaId": {
+          "name": "GachaId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "GachaStampSheetGroupId": {
+          "name": "GachaStampSheetGroupId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "master_gacha_button_id_idx": {
+          "name": "master_gacha_button_id_idx",
+          "columns": [
+            {
+              "expression": "Id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.master_GachaExchange": {
+      "name": "master_GachaExchange",
+      "schema": "",
+      "columns": {
+        "Id": {
+          "name": "Id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "RewardId": {
+          "name": "RewardId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "ExchangeLimit": {
+          "name": "ExchangeLimit",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "RequiredResourceAmount": {
+          "name": "RequiredResourceAmount",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "Order": {
+          "name": "Order",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "GachaId": {
+          "name": "GachaId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "master_gacha_exchange_id_idx": {
+          "name": "master_gacha_exchange_id_idx",
+          "columns": [
+            {
+              "expression": "Id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.master_GachaStamp": {
+      "name": "master_GachaStamp",
+      "schema": "",
+      "columns": {
+        "GroupId": {
+          "name": "GroupId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "SheetNumber": {
+          "name": "SheetNumber",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "StampNumber": {
+          "name": "StampNumber",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "RewardId": {
+          "name": "RewardId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "RewardGachaButtonId": {
+          "name": "RewardGachaButtonId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "AssetId": {
+          "name": "AssetId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "Description": {
+          "name": "Description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "IsFeatured": {
+          "name": "IsFeatured",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "master_gacha_stamp_key_idx": {
+          "name": "master_gacha_stamp_key_idx",
+          "columns": [
+            {
+              "expression": "GroupId",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "SheetNumber",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "StampNumber",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.master_GachaStampSheet": {
+      "name": "master_GachaStampSheet",
+      "schema": "",
+      "columns": {
+        "GroupId": {
+          "name": "GroupId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "SheetNumber": {
+          "name": "SheetNumber",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "CostumeIds": {
+          "name": "CostumeIds",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "master_gacha_stamp_sheet_key_idx": {
+          "name": "master_gacha_stamp_sheet_key_idx",
+          "columns": [
+            {
+              "expression": "GroupId",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "SheetNumber",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.master_GachaStampSheetGroup": {
+      "name": "master_GachaStampSheetGroup",
+      "schema": "",
+      "columns": {
+        "GroupId": {
+          "name": "GroupId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "AssetId": {
+          "name": "AssetId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "master_gacha_stamp_sheet_group_key_idx": {
+          "name": "master_gacha_stamp_sheet_group_key_idx",
+          "columns": [
+            {
+              "expression": "GroupId",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.master_Hair": {
+      "name": "master_Hair",
+      "schema": "",
+      "columns": {
+        "Id": {
+          "name": "Id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "CharacterId": {
+          "name": "CharacterId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "FittingCostumeId": {
+          "name": "FittingCostumeId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "Name": {
+          "name": "Name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "master_hair_id_idx": {
+          "name": "master_hair_id_idx",
+          "columns": [
+            {
+              "expression": "Id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.master_Item": {
+      "name": "master_Item",
+      "schema": "",
+      "columns": {
+        "Id": {
+          "name": "Id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "Name": {
+          "name": "Name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "AssetId": {
+          "name": "AssetId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "Description": {
+          "name": "Description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "HowToGet": {
+          "name": "HowToGet",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "Type": {
+          "name": "Type",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "Value": {
+          "name": "Value",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "Order": {
+          "name": "Order",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "SalePrice": {
+          "name": "SalePrice",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "IsPhotoShootingCharacterOnly": {
+          "name": "IsPhotoShootingCharacterOnly",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "master_item_id_idx": {
+          "name": "master_item_id_idx",
+          "columns": [
+            {
+              "expression": "Id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.master_LiveAbility": {
+      "name": "master_LiveAbility",
+      "schema": "",
+      "columns": {
+        "Id": {
+          "name": "Id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "Name": {
+          "name": "Name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "Levels": {
+          "name": "Levels",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "master_live_ability_id_idx": {
+          "name": "master_live_ability_id_idx",
+          "columns": [
+            {
+              "expression": "Id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.master_LoginBonus": {
+      "name": "master_LoginBonus",
+      "schema": "",
+      "columns": {
+        "Id": {
+          "name": "Id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "Name": {
+          "name": "Name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "Description": {
+          "name": "Description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "Type": {
+          "name": "Type",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "AssetId": {
+          "name": "AssetId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "TopColorCode": {
+          "name": "TopColorCode",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "BottomColorCode": {
+          "name": "BottomColorCode",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "Priority": {
+          "name": "Priority",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "RewardIds": {
+          "name": "RewardIds",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "OpenConditionId": {
+          "name": "OpenConditionId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "ReceiveConditionId": {
+          "name": "ReceiveConditionId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "master_login_bonus_id_idx": {
+          "name": "master_login_bonus_id_idx",
+          "columns": [
+            {
+              "expression": "Id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.master_LoginBonusText": {
+      "name": "master_LoginBonusText",
+      "schema": "",
+      "columns": {
+        "Id": {
+          "name": "Id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "CostumeId": {
+          "name": "CostumeId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "Text": {
+          "name": "Text",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "master_login_bonus_text_id_idx": {
+          "name": "master_login_bonus_text_id_idx",
+          "columns": [
+            {
+              "expression": "Id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.master_LoveColor": {
+      "name": "master_LoveColor",
+      "schema": "",
+      "columns": {
+        "LoveId": {
+          "name": "LoveId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "ExecuteButtonGradientStartColor": {
+          "name": "ExecuteButtonGradientStartColor",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "ExecuteButtonGradientEndColor": {
+          "name": "ExecuteButtonGradientEndColor",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "HomeButtonFrameColor": {
+          "name": "HomeButtonFrameColor",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "StorySelectMaskColor": {
+          "name": "StorySelectMaskColor",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "ItemBackgroundColor": {
+          "name": "ItemBackgroundColor",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "LoveLevelBackgroundColor": {
+          "name": "LoveLevelBackgroundColor",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "MainColor": {
+          "name": "MainColor",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "NoticeColor": {
+          "name": "NoticeColor",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "PickupTextColor": {
+          "name": "PickupTextColor",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "OverlayBackgroundColor": {
+          "name": "OverlayBackgroundColor",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "ScreenBackgroundColor": {
+          "name": "ScreenBackgroundColor",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "IconColor": {
+          "name": "IconColor",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "BorderLineColor": {
+          "name": "BorderLineColor",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "GaugeColor": {
+          "name": "GaugeColor",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "FooterGradientStartColor": {
+          "name": "FooterGradientStartColor",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "FooterGradientEndColor": {
+          "name": "FooterGradientEndColor",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "StartButtonGradientColor1": {
+          "name": "StartButtonGradientColor1",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "StartButtonGradientColor2": {
+          "name": "StartButtonGradientColor2",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "StartButtonGradientColor3": {
+          "name": "StartButtonGradientColor3",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "StartButtonTextColor": {
+          "name": "StartButtonTextColor",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "LoveLevelUpBackgroundColor": {
+          "name": "LoveLevelUpBackgroundColor",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "AdvMainColor": {
+          "name": "AdvMainColor",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "master_love_color_key_idx": {
+          "name": "master_love_color_key_idx",
+          "columns": [
+            {
+              "expression": "LoveId",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.master_LoveHomeAction": {
+      "name": "master_LoveHomeAction",
+      "schema": "",
+      "columns": {
+        "Id": {
+          "name": "Id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "LoveId": {
+          "name": "LoveId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "CharacterId": {
+          "name": "CharacterId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "MotionAssetId": {
+          "name": "MotionAssetId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "AdditionMotionAssetId": {
+          "name": "AdditionMotionAssetId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "VoiceAssetId": {
+          "name": "VoiceAssetId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "Text": {
+          "name": "Text",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "ActionType": {
+          "name": "ActionType",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "HiddenFavorabilityGte": {
+          "name": "HiddenFavorabilityGte",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "HiddenFavorabilityLte": {
+          "name": "HiddenFavorabilityLte",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "UnlockLoveStoryEndIds": {
+          "name": "UnlockLoveStoryEndIds",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "NowAfter": {
+          "name": "NowAfter",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "NowBefore": {
+          "name": "NowBefore",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "Weight": {
+          "name": "Weight",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "CostumeId": {
+          "name": "CostumeId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "master_love_home_action_key_idx": {
+          "name": "master_love_home_action_key_idx",
+          "columns": [
+            {
+              "expression": "Id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.master_LoveLevel": {
+      "name": "master_LoveLevel",
+      "schema": "",
+      "columns": {
+        "LoveId": {
+          "name": "LoveId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "Level": {
+          "name": "Level",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "RequiredExp": {
+          "name": "RequiredExp",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "LessonStepRewardExp": {
+          "name": "LessonStepRewardExp",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "LessonStepRewardStoryReadItemAmount": {
+          "name": "LessonStepRewardStoryReadItemAmount",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "master_love_level_key_idx": {
+          "name": "master_love_level_key_idx",
+          "columns": [
+            {
+              "expression": "LoveId",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "Level",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.master_LoveStoryEpisode": {
+      "name": "master_LoveStoryEpisode",
+      "schema": "",
+      "columns": {
+        "Id": {
+          "name": "Id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "LoveId": {
+          "name": "LoveId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "Episode": {
+          "name": "Episode",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "StoryId": {
+          "name": "StoryId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "AssetId": {
+          "name": "AssetId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "ConsumptionItemAmount": {
+          "name": "ConsumptionItemAmount",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "master_love_story_episode_key_idx": {
+          "name": "master_love_story_episode_key_idx",
+          "columns": [
+            {
+              "expression": "Id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.master_MarathonBoxGachaSetting": {
+      "name": "master_MarathonBoxGachaSetting",
+      "schema": "",
+      "columns": {
+        "MarathonId": {
+          "name": "MarathonId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "BoxGachaId": {
+          "name": "BoxGachaId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "Order": {
+          "name": "Order",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "UnlockRequiredPoint": {
+          "name": "UnlockRequiredPoint",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "GuageColorCode": {
+          "name": "GuageColorCode",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "GuageName": {
+          "name": "GuageName",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "master_marathon_box_gacha_setting_key_idx": {
+          "name": "master_marathon_box_gacha_setting_key_idx",
+          "columns": [
+            {
+              "expression": "MarathonId",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "BoxGachaId",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.master_Mission": {
+      "name": "master_Mission",
+      "schema": "",
+      "columns": {
+        "Id": {
+          "name": "Id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "CategoryType": {
+          "name": "CategoryType",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "MissionType": {
+          "name": "MissionType",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "TargetIds": {
+          "name": "TargetIds",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "Name": {
+          "name": "Name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "ShortDescription": {
+          "name": "ShortDescription",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "LongDescription": {
+          "name": "LongDescription",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "Order": {
+          "name": "Order",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "ViewConditionId": {
+          "name": "ViewConditionId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "LinkType": {
+          "name": "LinkType",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "LinkDetail": {
+          "name": "LinkDetail",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "Progresses": {
+          "name": "Progresses",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "EventMissionId": {
+          "name": "EventMissionId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "CompanyEnjoyCharacterId": {
+          "name": "CompanyEnjoyCharacterId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "CompanyEnjoyCharacterMissionCategoryType": {
+          "name": "CompanyEnjoyCharacterMissionCategoryType",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "CompanyTrustMissionCategoryType": {
+          "name": "CompanyTrustMissionCategoryType",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "master_mission_id_idx": {
+          "name": "master_mission_id_idx",
+          "columns": [
+            {
+              "expression": "Id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.master_PhotoAbility": {
+      "name": "master_PhotoAbility",
+      "schema": "",
+      "columns": {
+        "Id": {
+          "name": "Id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "Name": {
+          "name": "Name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "Description": {
+          "name": "Description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "AbilityType": {
+          "name": "AbilityType",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "PhotoAbilityLevels": {
+          "name": "PhotoAbilityLevels",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "PhotoAbilityGrades": {
+          "name": "PhotoAbilityGrades",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "master_photo_ability_id_idx": {
+          "name": "master_photo_ability_id_idx",
+          "columns": [
+            {
+              "expression": "Id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.master_PhotoRarityLevel": {
+      "name": "master_PhotoRarityLevel",
+      "schema": "",
+      "columns": {
+        "Rarity": {
+          "name": "Rarity",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "Level": {
+          "name": "Level",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "DeleteRewardItem": {
+          "name": "DeleteRewardItem",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "RerollRequiredItem": {
+          "name": "RerollRequiredItem",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "EnhanceRequiredItem": {
+          "name": "EnhanceRequiredItem",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "master_photo_rarity_level_key_idx": {
+          "name": "master_photo_rarity_level_key_idx",
+          "columns": [
+            {
+              "expression": "Rarity",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "Level",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.master_PhotoRecipe": {
+      "name": "master_PhotoRecipe",
+      "schema": "",
+      "columns": {
+        "Id": {
+          "name": "Id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "Name": {
+          "name": "Name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "Description": {
+          "name": "Description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "Level": {
+          "name": "Level",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "PhotoAbilitySetId": {
+          "name": "PhotoAbilitySetId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "RetouchConsumptionId": {
+          "name": "RetouchConsumptionId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "SaleRewardId": {
+          "name": "SaleRewardId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "PhotoRetouchEnhanceGroupId": {
+          "name": "PhotoRetouchEnhanceGroupId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "MinPhotoLevel": {
+          "name": "MinPhotoLevel",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "MaxPhotoLevel": {
+          "name": "MaxPhotoLevel",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "Order": {
+          "name": "Order",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "master_photo_recipe_id_idx": {
+          "name": "master_photo_recipe_id_idx",
+          "columns": [
+            {
+              "expression": "Id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.master_PhotoRetouchEnhance": {
+      "name": "master_PhotoRetouchEnhance",
+      "schema": "",
+      "columns": {
+        "GroupId": {
+          "name": "GroupId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "PhotoLevel": {
+          "name": "PhotoLevel",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "ConsumptionId": {
+          "name": "ConsumptionId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "master_photo_retouch_enhance_key_idx": {
+          "name": "master_photo_retouch_enhance_key_idx",
+          "columns": [
+            {
+              "expression": "GroupId",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "PhotoLevel",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.master_Reward": {
+      "name": "master_Reward",
+      "schema": "",
+      "columns": {
+        "Id": {
+          "name": "Id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "Resources": {
+          "name": "Resources",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "master_reward_id_idx": {
+          "name": "master_reward_id_idx",
+          "columns": [
+            {
+              "expression": "Id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.master_RewardSort": {
+      "name": "master_RewardSort",
+      "schema": "",
+      "columns": {
+        "RewardSortTargetType": {
+          "name": "RewardSortTargetType",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "RewardSortResourceType": {
+          "name": "RewardSortResourceType",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "Order": {
+          "name": "Order",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "master_reward_sort_key_idx": {
+          "name": "master_reward_sort_key_idx",
+          "columns": [
+            {
+              "expression": "RewardSortTargetType",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "RewardSortResourceType",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.master_Setting": {
+      "name": "master_Setting",
+      "schema": "",
+      "columns": {
+        "Id": {
+          "name": "Id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "AccessoryEnhancesRequiredMaterialAmount": {
+          "name": "AccessoryEnhancesRequiredMaterialAmount",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "AccessoryLimit": {
+          "name": "AccessoryLimit",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "CardResetStoneAmount": {
+          "name": "CardResetStoneAmount",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "CardSupportLevelLimit": {
+          "name": "CardSupportLevelLimit",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "CardSupportRemovableMinutes": {
+          "name": "CardSupportRemovableMinutes",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "PhotoDeleteAmountLimit": {
+          "name": "PhotoDeleteAmountLimit",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "PhotoDefaultLimit": {
+          "name": "PhotoDefaultLimit",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "PhotoLimitExtendAmount": {
+          "name": "PhotoLimitExtendAmount",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "PhotoLimitExtendStone": {
+          "name": "PhotoLimitExtendStone",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "PhotoLimitExtendLimit": {
+          "name": "PhotoLimitExtendLimit",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "PhotoRecipeLimit": {
+          "name": "PhotoRecipeLimit",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "PhotoRecipeSaleAmountLimit": {
+          "name": "PhotoRecipeSaleAmountLimit",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "GoldLimit": {
+          "name": "GoldLimit",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "ItemLimit": {
+          "name": "ItemLimit",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "FreeStoneLimit": {
+          "name": "FreeStoneLimit",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "PaidStoneLimit": {
+          "name": "PaidStoneLimit",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "CardStaminaBarMax": {
+          "name": "CardStaminaBarMax",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "master_setting_id_idx": {
+          "name": "master_setting_id_idx",
+          "columns": [
+            {
+              "expression": "Id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.master_Skill": {
+      "name": "master_Skill",
+      "schema": "",
+      "columns": {
+        "Id": {
+          "name": "Id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "Name": {
+          "name": "Name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "CategoryType": {
+          "name": "CategoryType",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "Levels": {
+          "name": "Levels",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "AssetId": {
+          "name": "AssetId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "master_skill_id_idx": {
+          "name": "master_skill_id_idx",
+          "columns": [
+            {
+              "expression": "Id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.master_Story": {
+      "name": "master_Story",
+      "schema": "",
+      "columns": {
+        "Id": {
+          "name": "Id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "SectionName": {
+          "name": "SectionName",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "Name": {
+          "name": "Name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "Description": {
+          "name": "Description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "RewardId": {
+          "name": "RewardId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "AdvPlayTypes": {
+          "name": "AdvPlayTypes",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "AdvAssetIds": {
+          "name": "AdvAssetIds",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "AdditionalDisplayCharacterIds": {
+          "name": "AdditionalDisplayCharacterIds",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "BranchFirstText": {
+          "name": "BranchFirstText",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "BranchCautionText": {
+          "name": "BranchCautionText",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "BranchBgmAssetId": {
+          "name": "BranchBgmAssetId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "BranchChoices": {
+          "name": "BranchChoices",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "master_story_id_idx": {
+          "name": "master_story_id_idx",
+          "columns": [
+            {
+              "expression": "Id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.master_StoryEpisodeConsumption": {
+      "name": "master_StoryEpisodeConsumption",
+      "schema": "",
+      "columns": {
+        "Id": {
+          "name": "Id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "ReleaseCount": {
+          "name": "ReleaseCount",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "RequiredStoryPoint": {
+          "name": "RequiredStoryPoint",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "master_story_episode_consumption_key_idx": {
+          "name": "master_story_episode_consumption_key_idx",
+          "columns": [
+            {
+              "expression": "Id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "ReleaseCount",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.master_StoryPart": {
+      "name": "master_StoryPart",
+      "schema": "",
+      "columns": {
+        "Id": {
+          "name": "Id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "AssetId": {
+          "name": "AssetId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "Name": {
+          "name": "Name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "SubTitle": {
+          "name": "SubTitle",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "Order": {
+          "name": "Order",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "Type": {
+          "name": "Type",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "ViewConditionId": {
+          "name": "ViewConditionId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "UnlockConditionId": {
+          "name": "UnlockConditionId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "PointType": {
+          "name": "PointType",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "StoryEpisodeConsumptionId": {
+          "name": "StoryEpisodeConsumptionId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "Chapters": {
+          "name": "Chapters",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "NoteText": {
+          "name": "NoteText",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "master_story_part_id_idx": {
+          "name": "master_story_part_id_idx",
+          "columns": [
+            {
+              "expression": "Id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    }
+  },
+  "enums": {},
+  "schemas": {},
+  "sequences": {},
+  "roles": {},
+  "policies": {},
+  "views": {},
+  "_meta": {
+    "columns": {},
+    "schemas": {},
+    "tables": {}
+  }
+}

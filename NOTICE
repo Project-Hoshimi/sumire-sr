@@ -1,0 +1,29 @@
+sumire-sr
+Copyright (C) 2025-2026 sumire-sr contributors
+
+This program is free software: you can redistribute it and/or modify it under
+the terms of the GNU Affero General Public License as published by the Free
+Software Foundation, either version 3 of the License, or (at your option) any
+later version.
+
+This program is distributed in the hope that it will be useful, but WITHOUT
+ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+FOR A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+details.
+
+You should have received a copy of the GNU Affero General Public License along
+with this program. If not, see <https://www.gnu.org/licenses/>.
+
+Portions of this project are derived from solis-server:
+
+  https://github.com/vertesan/solis-server
+
+solis-server is licensed under the GNU Affero General Public License, version
+3.0. The upstream license text is reproduced in LICENSE.
+
+IDOLY PRIDE and all related names, characters, trademarks, game assets, and
+other third-party materials belong to their respective owners, including
+QualiArts, Inc. and CyberAgent, Inc. This project is not affiliated with,
+endorsed by, or sponsored by QualiArts, CyberAgent, or the IDOLY PRIDE rights
+holders. No game assets, master data, or captured game traffic are distributed
+with this repository.

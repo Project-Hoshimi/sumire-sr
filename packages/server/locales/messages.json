@@ -1,0 +1,22 @@
+{
+  "en": {
+    "notImplemented": "This feature is not implemented yet.",
+    "inviteOnlyLogin": "Invite Only. Please Login using your link password.",
+    "inviteOnlyBlocked": "This server is invite-only. Open Account → Enter Link Password.",
+    "invalidCredentials": "Incorrect user ID or link password.",
+    "ownAccount": "This is already your current account.",
+    "rateLimited": "Too many attempts. Try again later.",
+    "expiredToken": "This transfer has expired. Enter your link password again.",
+    "invalidPassword": "Link password must be 8-16 letters and digits."
+  },
+  "ja": {
+    "notImplemented": "この機能はまだ実装されていません。",
+    "inviteOnlyLogin": "招待制サーバーです。連携パスワードでログインしてください。",
+    "inviteOnlyBlocked": "招待制サーバーです。アカウント → 連携パスワード入力 からログインしてください。",
+    "invalidCredentials": "ユーザーIDまたは連携パスワードが正しくありません。",
+    "ownAccount": "既に現在のアカウントです。",
+    "rateLimited": "試行回数が多すぎます。しばらくしてから再度お試しください。",
+    "expiredToken": "この引き継ぎは期限切れです。もう一度連携パスワードを入力してください。",
+    "invalidPassword": "連携パスワードは8〜16文字の英数字で入力してください。"
+  }
+}

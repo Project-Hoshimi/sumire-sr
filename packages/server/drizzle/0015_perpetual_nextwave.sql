@@ -1,0 +1,2 @@
+ALTER TABLE "player_love_progress" ADD COLUMN "save_unlocked" boolean DEFAULT false NOT NULL;--> statement-breakpoint
+ALTER TABLE "player_love_progress" ADD COLUMN "last_play_time" bigint DEFAULT 0 NOT NULL;

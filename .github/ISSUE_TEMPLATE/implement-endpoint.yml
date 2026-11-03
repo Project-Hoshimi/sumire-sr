@@ -1,0 +1,57 @@
+name: Implement endpoint
+description: Request or claim an RPC endpoint
+title: "[endpoint] Service:Method"
+labels: ["endpoint"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this form for a single RPC. For broad features or roadmap discussion, use GitHub Discussions instead.
+
+  - type: input
+    id: endpoint
+    attributes:
+      label: Endpoint
+      description: The RPC name in `Service:Method` form.
+      placeholder: "Card:Enhance"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: track
+    attributes:
+      label: Track
+      description: Which track should this endpoint target?
+      options:
+        - sandbox-v1
+        - parity
+        - not sure
+    validations:
+      required: true
+
+  - type: textarea
+    id: behaviour
+    attributes:
+      label: Client behaviour
+      description: What does the client do when this endpoint is missing or wrong? Include screens, toasts, and any blocking flow.
+      placeholder: "Opening the card detail screen shows a network error and returns to home."
+    validations:
+      required: true
+
+  - type: textarea
+    id: captures
+    attributes:
+      label: Captures available
+      description: Do you have official captures for this endpoint? Give the date/id and describe the relevant fields. Do not paste game data or raw captures.
+      placeholder: "Yes — capture 2026-10-05, request/response decoded; no data attached."
+    validations:
+      required: false
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: What must be true for this endpoint to be considered done?
+      placeholder: "Handler updates the card level and returns the expected CommonResponse; covered by a test; npm run check passes."
+    validations:
+      required: true

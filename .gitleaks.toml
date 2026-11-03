@@ -1,0 +1,8 @@
+title = "sumire-sr gitleaks config"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Crypto test labels quote the captured request id, not a secret"
+paths = ['''packages/protocol/test/test_crypto\.cjs''']

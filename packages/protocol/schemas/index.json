@@ -1,0 +1,94 @@
+{
+  "schemaVersion": "a1.0",
+  "source": {
+    "dump": "dump.cs",
+    "sha": "07f3423d0c8042ff"
+  },
+  "counts": {
+    "messageClasses": 1736,
+    "requestClasses": 345,
+    "responseClasses": 424,
+    "referencedRequestTypes": 342,
+    "referencedResponseTypes": 419,
+    "enums": 1719,
+    "services": 67,
+    "endpointMethods": 766,
+    "oneofMessages": 5
+  },
+  "oneofMessages": [
+    "FieldRules",
+    "StringRules",
+    "BytesRules",
+    "HttpRule",
+    "Value"
+  ],
+  "nameConflicts": [
+    {
+      "name": "Reward",
+      "n": 2,
+      "namespaces": [
+        "Solis.Common.Proto.Transaction",
+        "Solis.Common.Proto.Master"
+      ]
+    },
+    {
+      "name": "UserDeckPosition",
+      "n": 2,
+      "namespaces": [
+        "Solis.Common.Proto.Transaction",
+        "Solis.Common.Proto.Api"
+      ]
+    },
+    {
+      "name": "ExerciseDeckPosition",
+      "n": 2,
+      "namespaces": [
+        "Solis.Common.Proto.Api",
+        "Solis.Common.Proto.Master"
+      ]
+    },
+    {
+      "name": "PhotoActivity",
+      "n": 2,
+      "namespaces": [
+        "Solis.Common.Proto.Api",
+        "Solis.Common.Proto.Master"
+      ]
+    },
+    {
+      "name": "PhotoContestActivity",
+      "n": 2,
+      "namespaces": [
+        "Solis.Common.Proto.Api",
+        "Solis.Common.Proto.Master"
+      ]
+    },
+    {
+      "name": "PhotoContestQuestMusic",
+      "n": 2,
+      "namespaces": [
+        "Solis.Common.Proto.Api",
+        "Solis.Common.Proto.Master"
+      ]
+    },
+    {
+      "name": "PhotoContestQuestStage",
+      "n": 2,
+      "namespaces": [
+        "Solis.Common.Proto.Api",
+        "Solis.Common.Proto.Master"
+      ]
+    },
+    {
+      "name": "PhotoExpression",
+      "n": 2,
+      "namespaces": [
+        "Solis.Common.Proto.Api",
+        "Solis.Common.Proto.Master"
+      ]
+    }
+  ],
+  "unresolvedFieldCount": 0,
+  "schemaFields": 7842,
+  "enumValues": 11885
+}

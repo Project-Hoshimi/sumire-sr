@@ -1,0 +1,40 @@
+# Idoly Pride private server — Docker Compose
+# Profiles:
+#   dev    — Postgres only (gateway runs natively via `npm run dev`), host port 5432
+#   deploy — full stack: fastify-api + postgres + nginx asset server (Phase 8)
+services:
+  postgres:
+    image: postgres:18
+    profiles: [dev, deploy]
+    environment:
+      POSTGRES_USER: idoly
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-idoly_dev_pw}
+      POSTGRES_DB: idoly
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U idoly -d idoly"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build: .
+    profiles: [deploy]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PORT: 8080
+      DATABASE_URL: postgres://idoly:${POSTGRES_PASSWORD:-idoly_dev_pw}@postgres:5432/idoly
+      MASTER_DB_PATH: /app/phaseA2/master.db
+      JWT_PRIVATE_KEY_PEM: ${JWT_PRIVATE_KEY_PEM}
+      JWT_PUBLIC_KEY_PEM: ${JWT_PUBLIC_KEY_PEM}
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+
+volumes:
+  pgdata:

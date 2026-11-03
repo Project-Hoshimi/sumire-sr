@@ -1,0 +1,47 @@
+{
+  "name": "idoly-pride-fastify-api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Greenfield private server gateway + game-logic services for game.qualiarts.idolypride (A4/M1)",
+  "scripts": {
+    "dev": "node --watch src/server.ts",
+    "start": "node src/server.ts",
+    "typecheck": "tsc --noEmit",
+    "test:crypto": "node src/selfcheck.ts",
+    "test:auth": "node src/authtest.ts",
+    "test:authcreate": "node src/authcreatetest.ts",
+    "test:freshaccount": "node src/freshaccounttest.ts",
+    "test:boot": "node src/boottest.ts",
+    "test:db": "node src/dbtest.ts",
+    "test:migration": "node src/migrationtest.ts",
+    "test:verify": "node src/checkdecode.ts",
+    "test:sandbox": "node src/profiles/sandbox/sandbox.test.ts",
+    "test:sandbox:db": "node src/profiles/sandbox/sandboxdb.test.ts",
+    "test:unit": "npm run test:crypto && npm run test:auth && npm run test:sandbox",
+    "test:full": "npm run test:crypto && npm run test:auth && npm run test:boot && npm run test:db && npm run test:sandbox:db",
+    "test": "npm run test:full",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate",
+    "db:seed-master": "node src/db/seedMaster.ts",
+    "grant:item": "node src/db/grantItem.ts",
+    "invite:create": "node src/scripts/invites.ts create",
+    "invite:list": "node src/scripts/invites.ts list",
+    "invite:revoke": "node src/scripts/invites.ts revoke",
+    "account:reset-password": "node src/scripts/resetPassword.ts",
+    "sandbox:seed": "node src/profiles/sandbox/seedUser.ts",
+    "db:studio": "drizzle-kit studio"
+  },
+  "dependencies": {
+    "@sumire-sr/protocol": "*",
+    "dotenv": "^17.4.2",
+    "drizzle-orm": "^0.45.2",
+    "fastify": "^5.12.4",
+    "postgres": "^3.4.9"
+  },
+  "devDependencies": {
+    "@types/node": "^26.5.1",
+    "drizzle-kit": "^0.31.10",
+    "typescript": "^7.0.2"
+  }
+}

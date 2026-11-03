@@ -1,0 +1,1 @@
+ALTER TABLE "player_love_progress" ADD COLUMN "save_slots" jsonb DEFAULT '[]'::jsonb NOT NULL;
