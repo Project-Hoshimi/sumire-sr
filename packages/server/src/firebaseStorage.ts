@@ -301,11 +301,15 @@ async function publishPhotoImage(destination: string, body: Buffer, modifiedAt: 
     }
     await rename(temporaryPath, destination);
     published = true;
-    const dirHandle = await open(directory, 'r');
-    try {
-      await dirHandle.sync();
-    } finally {
-      await dirHandle.close();
+    // Persist the rename (POSIX). Windows cannot open a directory for fsync (EPERM, which
+    // would roll the published image back); NTFS journals the rename itself, so skip it there.
+    if (process.platform !== 'win32') {
+      const dirHandle = await open(directory, 'r');
+      try {
+        await dirHandle.sync();
+      } finally {
+        await dirHandle.close();
+      }
     }
   } catch (e) {
     if (!published) await removeIfExists(temporaryPath);
