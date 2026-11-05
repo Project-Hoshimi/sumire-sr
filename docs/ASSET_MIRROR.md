@@ -25,6 +25,37 @@
 - **Not a game-client CDN.** The game client downloads UnityFS bundles from the URL in the Octo manifest's `urlFormat` (the official CloudFront host). This route serves *extracted* artifacts, so it cannot stand in for that host. Serving bundles to the client would follow the reference design instead: a local Octo database with a rewritten `urlFormat`, and bundles resolved by MD5. That is a different feature.
 - **Tests.** `npm run -w packages/server test:assetmirror`, which is part of `npm run check`. The tests use only synthetic fixtures in a temp directory. They cover serving each type, HEAD, 304, ranges, missing files, invalid identifiers, raw `..`/`%2e%2e` targets over a loopback socket, junction escapes, and `/v2/*` plus the RPC catch-alls keeping their routes, both with the mirror enabled and disabled.
 
+### Local Octo store (experimental, opt-in, removable)
+
+`packages/server/src/octoStore.ts` serves the game client's bundles from local disk, for local testing with your own copy. It is separate from the final-artifact mirror above.
+
+- **Enable** by setting `SUMIRE_OCTO_DATABASE` (a decrypted, bare `octodb.Database` protobuf) together with `SUMIRE_OCTO_ASSETS` (directories of MD5-named CDN files, flat or `<md5[0:2]>/<md5>`, separated by the platform path delimiter). `SUMIRE_OCTO_AES_KEY` and `SUMIRE_OCTO_AES_IV` are also required, as hex values from the environment; they are never in source. When `SUMIRE_OCTO_DATABASE` is unset nothing is registered and `/v2/*` proxies upstream as before.
+- **Behaviour.** `GET /v2/pub/a/<app>/v/<ver>/list/<rev>` returns the local database with `urlFormat` rewritten to `SUMIRE_OCTO_URL_FORMAT` (default `https://api.octo-cloud.com/octo/{type}/{o}?v={v}&g={g}`, a host the client mod already redirects). It is re-encrypted as AES-256-CBC over 16 random bytes followed by the database. `GET`/`HEAD /octo/<assetbundle|resources>/<objectName>` streams the matching file unchanged. Only objects listed in the database are served, and only if the file on disk has the manifest size. Range requests are supported. Other methods and other `/v2/*` paths still go to the proxy.
+- **Verified on device** (JP 6.1.0, x86_64 emulator): the client accepts the re-encrypted list with a random 16-byte prefix and the always-full list for `{rev}` 0 and 1078. It then downloaded 1,001 bundles (1,090 MiB) from the local route, all with status 200.
+- **Remote stores.** A network share already works, because `SUMIRE_OCTO_ASSETS` takes plain (UNC or mounted) paths. Clients can also download from another host directly if `SUMIRE_OCTO_URL_FORMAT` points at a server that answers by objectName, such as another sumire-sr with this store enabled. *Not implemented:* fetching from a remote HTTP store that serves files by MD5 and passing them through to the client, with optional MD5-checked caching. That would need a `SUMIRE_OCTO_REMOTE` URL template in `OctoStore.open()`. A list-only node would also need the asset-directory requirement relaxed.
+- **Remove** by deleting `octoStore.ts` and `octoStore.test.ts`, the two `octoStore` lines in `server.ts`, the `test:octostore` script, the `.env.example` block, and this subsection.
+- **Tests:** `npm run -w packages/server test:octostore`. They use a synthetic database, synthetic files and a random key and IV.
+
+### Raw MD5 bundles vs extracted artifacts
+
+The two routes serve different things and are not interchangeable:
+
+| | Octo store (`/octo/*`, implemented) | Extracted mirror (`/assets/*`, serving only) |
+|---|---|---|
+| Content | The unmodified CDN files: still obfuscated UnityFS bundles plus raw resources, named by the MD5 in the Octo database | Final artifacts: `.opus`, `.png`, `.atlas`, `.json` |
+| Consumer | The game client. It deobfuscates and loads bundles itself. | Tools, web viewers and later milestones (e.g. M3 ADV audio). The game client cannot use these. |
+| Lookup | `objectName` from the database → `md5` → `<dir>/<md5>` or `<dir>/<md5[0:2]>/<md5>` | Mirror-relative path (`parseAssetPath`) |
+| Processing | None: byte-for-byte streaming | Done offline by an extractor; the server only streams the result |
+
+An extracted solution would need these steps per asset, in a separate operator-run tool. The MD5 store can be its input, so nothing has to be downloaded again.
+1. Map the asset `name` → `md5` via the decrypted database, and read the bundle from the MD5 store.
+2. **Deobfuscate**: XOR the first 256 bytes with the name-derived mask (§2.2) unless the file already starts with `UnityFS`. The algorithm must first be pinned down with a verified test vector.
+3. **Parse UnityFS**: the block directory, LZ4/LZMA decompression, and SerializedFile type trees for Unity 2022.3.21f1.
+4. **Convert per type**: Texture2D (ASTC/ETC) → PNG, AudioClip (FSB5) → Opus via ffmpeg, spine `.atlas`/`.skl` → text/JSON (§2.3). `resources` entries are already raw and need no conversion.
+5. **Write** to the mirror under the `assetIdToPath` layout. Every output path must pass `parseAssetPath()`; writes go through tmp + rename, with an MD5 sidecar for skip-if-unchanged, and nothing intermediate is kept.
+
+Steps 3 and 4 are the tooling blocker described below. Nothing in this repo implements steps 1–5 yet; `AssetExtractor` in `assetMirrorPipeline.ts` is the seam where they would plug in.
+
 ### What remains, and blockers
 
 1. **Manifest sync (`feat/octo-asset-sync`).** Feasible with the existing runtime: `fetch`, `node:crypto` AES-256-CBC, `node:zlib`, and the protocol package's protobuf `Reader`. Prerequisites:
