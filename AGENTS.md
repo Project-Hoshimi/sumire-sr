@@ -67,6 +67,7 @@ Handlers are registered at import time with `register('Service:Method', handler,
 | `WIRE_SEC_KEY` | Wire-crypto secret from a maintainer. Never committed. |
 | `JWT_PRIVATE_KEY_PATH` | RS256 signing key path. Generated on first boot if missing. |
 | `DATABASE_URL` | PostgreSQL 18 connection string. |
+| `SUMIRE_ASSET_MIRROR_DIR` | Optional. Directory of extracted final artifacts served at `GET /assets/*` (`docs/ASSET_MIRROR.md`). Unset disables the route. |
 
 ## Commands
 

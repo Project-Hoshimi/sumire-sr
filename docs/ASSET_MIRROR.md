@@ -1,6 +1,39 @@
 # ASSET_MIRROR — official asset CDN mirror pipeline (design / RECON)
 
-> Status: ⏳ planned (design only — no implementation yet). Saved 2026-10-08 per user request ("write these changes to the doc and add a short reference to it in the main project plan doc"). Main project plan: `docs/PLANS.md`. Scope: PLANS.md M2+ Static Asset/CDN track ("Mirrors official CDN URL structure" + "Serves mined assets (audio/textures…)").
+> Status: 🟡 partial. The serving slice (step 4's local route) is implemented; manifest sync and extraction are not. See §0.
+>
+> Original status: ⏳ planned (design only). Saved 2026-10-08 per user request ("write these changes to the doc and add a short reference to it in the main project plan doc"). Main project plan: `docs/PLANS.md`. Scope: PLANS.md M2+ Static Asset/CDN track ("Mirrors official CDN URL structure" + "Serves mined assets (audio/textures…)").
+
+## 0. Implementation status
+
+### What exists today (verified in code)
+
+| Piece | Where | What it does |
+|---|---|---|
+| `/v2/*` | `packages/server/src/server.ts` (`proxyHandler`) | Live pass-through proxy to the upstream Octo API (`api.octo-cloud.com`). It buffers each response and relays it unchanged: no cache, no decrypt, nothing on disk. It is **not** a mirror, and the asset mirror does not touch it. |
+| Firebase Storage | `packages/server/src/firebaseStorage.ts` | Photo image upload (resumable `POST /v0/b/<bucket>/o`) and download (`GET …/o/<name>?alt=media&token=…`) for the `udc-idolypride` and `event-idolypride` buckets, stored under `RESOURCE_DIR/Photo/…`. Separate from the asset mirror. |
+| **Asset mirror serving** | `packages/server/src/assetMirror.ts` | `GET`/`HEAD /assets/<relative path>` streams already-extracted final artifacts from `SUMIRE_ASSET_MIRROR_DIR`. |
+| Sync/extract contracts | `packages/server/src/assetMirrorPipeline.ts` | Types only (`OctoManifestEntry`, `AssetFetchPolicy`, `AssetFetchPlan`, `AssetExtractor`). No implementation. |
+
+### Serving slice behaviour
+
+- **Opt-in.** The route is registered only when `SUMIRE_ASSET_MIRROR_DIR` is set. When it is unset, the route table is unchanged. The setting is profile-independent and changes no RPC behaviour. Keep the directory outside version control; `data/` is already git-ignored.
+- **Layout.** The URL path is the path relative to the mirror root, e.g. `/assets/sud/vo/adv/<clip>.opus`. The exact `assetIdToPath` mapping is for the extractor to decide (§2.3); the server does not derive paths from asset ids.
+- **Allowed types:** `.opus` (`audio/ogg; codecs=opus`), `.png`, `.atlas` (text), and `.json`. Any other extension is rejected with 400, including raw bundles and manifests.
+- **Path safety.** The raw path is percent-decoded once and then validated segment by segment (`parseAssetPath`). Requests fail with 400 if they contain empty, `.` or `..` segments, dot files, `\`, `%` after decoding, NUL, or Windows device names. They also fail if they exceed the depth or length limits. The file is then resolved with `realpath` and must stay inside the root, so symlinks and junctions that point outside return 404. On POSIX the file is opened with `O_NOFOLLOW`.
+- **Responses.** Files are streamed from an open file handle and never buffered. Responses carry `content-length` and a weak `ETag` (size + mtime), with `cache-control: no-cache` and `x-content-type-options: nosniff`. `If-None-Match` returns 304. A single `Range` request returns 206 and an unsatisfiable range returns 416. Multi-range requests get the full body, and a stale `If-Range` also gets the full body. A missing file returns 404 with a fixed body that does not include the path.
+- **Not a game-client CDN.** The game client downloads UnityFS bundles from the URL in the Octo manifest's `urlFormat` (the official CloudFront host). This route serves *extracted* artifacts, so it cannot stand in for that host. Serving bundles to the client would follow the reference design instead: a local Octo database with a rewritten `urlFormat`, and bundles resolved by MD5. That is a different feature.
+- **Tests.** `npm run -w packages/server test:assetmirror`, which is part of `npm run check`. The tests use only synthetic fixtures in a temp directory. They cover serving each type, HEAD, 304, ranges, missing files, invalid identifiers, raw `..`/`%2e%2e` targets over a loopback socket, junction escapes, and `/v2/*` plus the RPC catch-alls keeping their routes, both with the mirror enabled and disabled.
+
+### What remains, and blockers
+
+1. **Manifest sync (`feat/octo-asset-sync`).** Feasible with the existing runtime: `fetch`, `node:crypto` AES-256-CBC, `node:zlib`, and the protocol package's protobuf `Reader`. Prerequisites:
+   - Add an `octodb.Database` / `Data` schema descriptor. It is not in `packages/protocol/schemas/` today.
+   - Read the decrypt key, IV and request headers from the environment, following the `WIRE_SEC_KEY` convention, not from source.
+   - Persist only `OctoManifestEntry` metadata.
+   - Ship it as an operator-run script with an explicit prefix allowlist, a byte budget and a mandatory dry-run report. The server never starts it.
+2. **Fetch + deobfuscation (`feat/asset-mirror-fetch`).** The XOR mask in §2.2 is described only informally. Implement it only against a verified reference test vector; none is in this repo, and tests may not use real assets.
+3. **Unity extraction.** Blocked on tooling. Extraction needs UnityFS block decompression (LZ4 and LZMA; LZMA is not in `node:zlib`), SerializedFile type-tree parsing, Texture2D decoding (ASTC/ETC), and AudioClip FSB5 → Opus transcoding (ffmpeg). None of these are in the workspace's dependencies, and adding a Python or native toolchain needs its own review. `AssetExtractor` is the seam where such a tool would plug in.
 
 ## 1. Where the official asset pipeline lives (upstream sources)
 

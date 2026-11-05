@@ -11,6 +11,7 @@ import { ensureTlsCert } from './tls.ts';
 import { registerFirebaseEmu } from './firebaseEmu.ts';
 import { registerFirebaseStorage } from './firebaseStorage.ts';
 import { registerInviteRoutes } from './routes/invites.ts';
+import { registerAssetMirror } from './assetMirror.ts';
 import { MASTER_BLOBS_DIR } from './services/master.ts';
 import { isSandbox } from './profile.ts';
 import { titleVariantBlobPath } from './profiles/sandbox/titleBackground.ts';
@@ -319,6 +320,9 @@ export function buildServer(): FastifyInstance {
   registerFirebaseStorage(app);
   // Invite pages and the token-guarded admin API (docs/LOGIN_FLOW.md).
   registerInviteRoutes(app);
+  // Local asset mirror of extracted final artifacts (docs/ASSET_MIRROR.md).
+  // Opt-in via SUMIRE_ASSET_MIRROR_DIR; separate from the `/v2/*` Octo proxy.
+  registerAssetMirror(app, config.assetMirrorDir);
 
   app.all('/api/*', handler);
   app.all('/:service/:method', handler);
