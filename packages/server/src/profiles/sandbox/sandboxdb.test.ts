@@ -49,6 +49,8 @@ const { CLIENT_UNRESOLVABLE, isClientResolvable } = await import('./clientDenyli
 const { cardReleaseFromRows, maxEnhancementLevel } = await import('../../services/cardRelease.ts');
 const { applyCardStatsFromParam } = await import('../../services/card.ts');
 const { master } = await import('../../master/index.ts');
+const { loveRoutes } = await import('../../services/moshikoi/catalog.ts');
+const loveStandardEndingCount = loveRoutes('love-23-0514').endings.length;
 
 let pass = 0;
 let fail = 0;
@@ -1162,6 +1164,737 @@ const loveRows = await db.select().from(playerLoveProgress).where(eq(playerLoveP
 const loveExp = new Map(loveRows.map((r) => [r.loveId, Number(r.exp)]));
 check('every Love route is at its top level', loveTops.length > 0 && loveTops.every((t) => (loveExp.get(String(t.LoveId)) ?? 0) >= t.exp), loveTops.length);
 check('Love protagonist name is left for Love:Register', loveRows.every((r) => r.name == null));
+const loveTitleExtra = await rpc('Love:TitleExtra', token, { LoveId: 'love-extra-25-0426' });
+check(
+  'Love:TitleExtra returns the extra story title asset',
+  loveTitleExtra.TitleAssetId === 'love-25-0426',
+  loveTitleExtra.TitleAssetId,
+);
+const loveTitleExtraInfo = (loveTitleExtra.LoveInfo ?? {}) as Record<string, unknown>;
+check(
+  'Love:TitleExtra sends the extra content asset id for its loading logo',
+  loveTitleExtraInfo.AssetId === 'love-25-0426',
+  loveTitleExtraInfo.AssetId,
+);
+check(
+  'Love:TitleExtra LoveInfo omits CharacterId and CostumeId',
+  !loveTitleExtraInfo.CharacterId && !loveTitleExtraInfo.CostumeId,
+  `${loveTitleExtraInfo.CharacterId}/${loveTitleExtraInfo.CostumeId}`,
+);
+
+// Sumire deliberately lists every supported event in Love:Title, extras included,
+// because it has no Home:Enter LoveEventInfos to surface them. The client keys
+// this list by LoveId.
+const loveTitle = await rpc('Love:Title', token, {});
+const loveTitleInfos = (loveTitle.LoveInfos ?? []) as Record<string, unknown>[];
+const loveTitleIds = loveTitleInfos.map((i) => String(i.LoveId ?? ''));
+check(
+  'Love:Title returns exactly one LoveInfo per LoveId',
+  loveTitleIds.length === 6 && loveTitleIds.length === new Set(loveTitleIds).size,
+  loveTitleIds.join(','),
+);
+check(
+  'Love:Title includes the extra event exactly once',
+  loveTitleIds.filter((id) => id === 'love-extra-25-0426').length === 1,
+  loveTitleIds.join(','),
+);
+const loveTitleOrders = loveTitleInfos.map((i) => Number(i.Order ?? NaN));
+check(
+  'Love:Title assigns distinct, increasing Order values',
+  loveTitleOrders.length > 0 &&
+    loveTitleOrders.every((order, i) => i === 0 || order > loveTitleOrders[i - 1]),
+  loveTitleOrders.join(','),
+);
+check(
+  'Love:Title LoveInfos omit CharacterId and CostumeId',
+  loveTitleInfos.every((i) => !i.CharacterId && !i.CostumeId),
+  loveTitleInfos.map((i) => `${i.LoveId}:${i.CharacterId}/${i.CostumeId}`).join(','),
+);
+const loveStandardTitleInfo =
+  loveTitleInfos.find((i) => i.LoveId === 'love-23-0514') ?? {};
+check(
+  'Love:Title reports normal type and standard base type',
+  Number(loveStandardTitleInfo.Type) === 1 && Number(loveStandardTitleInfo.BaseType) === 1,
+  `${loveStandardTitleInfo.Type}/${loveStandardTitleInfo.BaseType}`,
+);
+check(
+  'Love:Title carries the catalogued unlock condition',
+  loveStandardTitleInfo.UnlockConditionId === 'cd-clear-area-main-002' &&
+    Boolean(loveStandardTitleInfo.IsUnlocked),
+  loveStandardTitleInfo.UnlockConditionId,
+);
+check(
+  'Love:Title carries event and limited mission ids',
+  Array.isArray(loveStandardTitleInfo.EventMissionIds) &&
+    (loveStandardTitleInfo.EventMissionIds as unknown[]).length === 2 &&
+    Array.isArray(loveStandardTitleInfo.LimitedEventMissionIds) &&
+    (loveStandardTitleInfo.LimitedEventMissionIds as unknown[]).length === 1,
+  JSON.stringify([
+    loveStandardTitleInfo.EventMissionIds,
+    loveStandardTitleInfo.LimitedEventMissionIds,
+  ]),
+);
+check(
+  'Love:Title lists every catalog ending before the first clear',
+  ((loveStandardTitleInfo.StoryEndInfos ?? []) as unknown[]).length === loveStandardEndingCount &&
+    ((loveStandardTitleInfo.StoryEndInfos ?? []) as Record<string, unknown>[]).every(
+      (e) => !e.Unlocked,
+    ),
+  JSON.stringify(loveStandardTitleInfo.StoryEndInfos),
+);
+check(
+  'Love:Title does not mark a fresh route lesson-maxed',
+  !loveStandardTitleInfo.IsLessonRewardMax,
+  loveStandardTitleInfo.IsLessonRewardMax,
+);
+check(
+  'Love:Title reports the stocked present item as obtainable',
+  Boolean(loveStandardTitleInfo.HasHiddenFavorabilityObtainItem),
+  loveStandardTitleInfo.HasHiddenFavorabilityObtainItem,
+);
+check(
+  'Love:Title leaves the standard manager voice switch visible',
+  !loveStandardTitleInfo.IsHideManagerVoiceSwitch,
+  loveStandardTitleInfo.IsHideManagerVoiceSwitch,
+);
+
+// Legacy rows written before migration 0033 backfilled `active_story_episode_id`
+// can carry IsReadingStory=true with no active episode. Any Love state load must
+// repair that (and seed the empty route) before the client can call Restart.
+const legacyLoveId = 'love-24-0517';
+const legacyFirstEpisodeId = 'love-event-story-love-24-0517-001';
+await putElements(
+  playerId,
+  'Loves',
+  [
+    {
+      __msg: 'Solis.Common.Proto.Transaction.UserLove',
+      LoveId: legacyLoveId,
+      UnlockedLoveStoryEndIDs: [],
+      HiddenFavorability: 0,
+      IsReadingStory: true,
+    },
+  ],
+  db,
+);
+await db
+  .update(playerLoveProgress)
+  .set({ name: 'Legacy', activeStoryEpisodeId: '', storyEpisodeIds: [] })
+  .where(
+    and(
+      eq(playerLoveProgress.playerId, playerId),
+      eq(playerLoveProgress.loveId, legacyLoveId),
+    ),
+  );
+await rpc('Love:Top', token, { LoveId: legacyLoveId });
+const legacyLoveAfterTop = (await listElements(playerId, 'Loves', db)).find(
+  (l) => String(l.LoveId ?? '') === legacyLoveId,
+);
+check(
+  'Love:Top clears a stale legacy reading flag',
+  !legacyLoveAfterTop?.IsReadingStory,
+  legacyLoveAfterTop?.IsReadingStory,
+);
+const [legacyRowAfterTop] = await db
+  .select()
+  .from(playerLoveProgress)
+  .where(
+    and(
+      eq(playerLoveProgress.playerId, playerId),
+      eq(playerLoveProgress.loveId, legacyLoveId),
+    ),
+  )
+  .limit(1);
+check(
+  'Love:Top seeds an empty legacy route',
+  JSON.stringify(legacyRowAfterTop?.storyEpisodeIds) === JSON.stringify([legacyFirstEpisodeId]),
+  JSON.stringify(legacyRowAfterTop?.storyEpisodeIds),
+);
+let legacyStartFailed = '';
+try {
+  await rpc('Love:Start', token, { StoryEpisodeId: legacyFirstEpisodeId });
+} catch (err) {
+  legacyStartFailed = err instanceof Error ? err.message : String(err);
+}
+check('Love:Start succeeds after the legacy repair', legacyStartFailed === '', legacyStartFailed);
+
+// Solis `love/get_main_character.go:10-16` + `catalog.go:197-205`.
+const loveMainExtra = await rpc('Love:GetMainCharacter', token, {
+  LoveId: 'love-extra-25-0426',
+});
+const loveMainExtraInfo = (loveMainExtra.MainCharacterInfo ?? {}) as Record<string, unknown>;
+check(
+  'Love:GetMainCharacter returns a catalogued extra heroine',
+  ['char-rui', 'char-chs', 'char-smr', 'char-ngs'].includes(
+    String(loveMainExtraInfo.CharacterId ?? ''),
+  ),
+  loveMainExtraInfo.CharacterId,
+);
+check(
+  'Love:GetMainCharacter returns a complete extra portrait',
+  String(loveMainExtraInfo.CostumeId ?? '') !== '' &&
+    String(loveMainExtraInfo.AssetId ?? '') !== '' &&
+    String(loveMainExtraInfo.Color ?? '') !== '',
+  JSON.stringify(loveMainExtraInfo),
+);
+const loveMainStandard = await rpc('Love:GetMainCharacter', token, {
+  LoveId: 'love-23-0514',
+});
+const loveMainStandardInfo = (loveMainStandard.MainCharacterInfo ?? {}) as Record<
+  string,
+  unknown
+>;
+check(
+  'Love:GetMainCharacter uses the configured standard heroine',
+  loveMainStandardInfo.CharacterId === 'char-rei' &&
+    loveMainStandardInfo.CostumeId === 'cos-rei-schl-00' &&
+    loveMainStandardInfo.AssetId === 'img_chr_mem_rei' &&
+    loveMainStandardInfo.Color === '68D2E9',
+  JSON.stringify(loveMainStandardInfo),
+);
+
+// IsUnplayed follows registration (saved protagonist name), not ending unlocks.
+const loveRegisteredInfo = (loveTitleExtra.LoveInfo ?? {}) as Record<string, unknown>;
+check(
+  'Love:TitleExtra marks an unregistered route as unplayed',
+  Boolean(loveRegisteredInfo.IsUnplayed),
+  loveRegisteredInfo.IsUnplayed,
+);
+await rpc('Love:Register', token, { LoveId: 'love-extra-25-0426', Name: 'Tester' });
+const loveRegisteredExtra = await rpc('Love:TitleExtra', token, {
+  LoveId: 'love-extra-25-0426',
+});
+const loveRegisteredExtraInfo = (loveRegisteredExtra.LoveInfo ?? {}) as Record<string, unknown>;
+check(
+  'Love:TitleExtra marks a registered route as played',
+  !loveRegisteredExtraInfo.IsUnplayed,
+  loveRegisteredExtraInfo.IsUnplayed,
+);
+check(
+  'Love:TitleExtra reports the extra event type and base type',
+  Number(loveRegisteredExtraInfo.Type) === 2 && Number(loveRegisteredExtraInfo.BaseType) === 2,
+  `${loveRegisteredExtraInfo.Type}/${loveRegisteredExtraInfo.BaseType}`,
+);
+check(
+  'Love:TitleExtra hides the extra manager voice switch',
+  Boolean(loveRegisteredExtraInfo.IsHideManagerVoiceSwitch),
+  loveRegisteredExtraInfo.IsHideManagerVoiceSwitch,
+);
+check(
+  'Love:TitleExtra has no present item to obtain on the extra event',
+  !loveRegisteredExtraInfo.HasHiddenFavorabilityObtainItem,
+  loveRegisteredExtraInfo.HasHiddenFavorabilityObtainItem,
+);
+check(
+  'Love:TitleExtra does not mark a freshly registered route lesson-maxed',
+  !loveRegisteredExtraInfo.IsLessonRewardMax,
+  loveRegisteredExtraInfo.IsLessonRewardMax,
+);
+check(
+  'Love:TitleExtra carries the catalogued start time and unlock condition',
+  Number(loveRegisteredExtraInfo.StartTime) === 1745636400000 &&
+    loveRegisteredExtraInfo.UnlockConditionId === 'cd-clear-area-main-002',
+  `${loveRegisteredExtraInfo.StartTime}/${loveRegisteredExtraInfo.UnlockConditionId}`,
+);
+const loveRegisteredTop = await rpc('Love:Top', token, { LoveId: 'love-extra-25-0426' });
+check(
+  'Love:Top returns the saved protagonist name',
+  loveRegisteredTop.PlayerName === 'Tester',
+  loveRegisteredTop.PlayerName,
+);
+check(
+  'Love:Top sends the extra content banner asset id',
+  loveRegisteredTop.BannerAssetId === 'img_banner_l_event-love-25-0426',
+  loveRegisteredTop.BannerAssetId,
+);
+check(
+  'Love:Top sends the extra content exp asset id',
+  loveRegisteredTop.ExpAssetId === 'exp-love-25-0426',
+  loveRegisteredTop.ExpAssetId,
+);
+
+// Sandbox Love keys are free: the seed stocks every story key and Love:Start
+// never spends them on a paid episode. The story itself is route-driven, so the
+// paid episode must first be reached by playing episode 1.
+const loveStoryItemId = 'item-love-23-0514-story';
+const loveId = 'love-23-0514';
+const firstLoveEpisodeId = 'love-event-story-love-23-0514-001';
+const paidLoveEpisodeId = 'love-event-story-love-23-0514-002';
+const loveRoutePath = [
+  [firstLoveEpisodeId, [[1, 2], [2, 1]]],
+  [paidLoveEpisodeId, [[1, 1], [2, 2]]],
+  ['love-event-story-love-23-0514-003', [[1, 1], [2, 1]]],
+  ['love-event-story-love-23-0514-004', [[1, 1], [2, 2]]],
+  ['love-event-story-love-23-0514-005', [[1, 1], [2, 2]]],
+  ['love-event-story-love-23-0514-006', [[1, 2], [2, 2], [3, 1]]],
+  ['love-event-story-love-23-0514-007', [[1, 2], [2, 1]]],
+  ['love-event-story-love-23-0514-008-happy', [[1, 2]]],
+] as const;
+const loveRouteErrorDetails = async () => {
+  const [row] = await db
+    .select()
+    .from(playerLoveProgress)
+    .where(and(eq(playerLoveProgress.playerId, playerId), eq(playerLoveProgress.loveId, loveId)))
+    .limit(1);
+  return row;
+};
+const finishLoveEpisode = (episode: string, choices: ReadonlyArray<readonly [number, number]>) =>
+  rpc('Love:Finish', token, {
+    StoryEpisodeId: episode,
+    SelectStoryChoiceInfos: choices.map(([GroupIndex, Index]) => ({
+      GroupIndex,
+      Index,
+      IsValid: true,
+    })),
+  });
+
+const [loveKeyMaster, paidLoveEpisode] = await Promise.all([
+  db.select().from(master.masterItem).where(eq(master.masterItem.Id, loveStoryItemId)).limit(1),
+  db
+    .select()
+    .from(master.masterLoveStoryEpisode)
+    .where(eq(master.masterLoveStoryEpisode.Id, paidLoveEpisodeId))
+    .limit(1),
+]);
+check(
+  'test Love key and paid episode exist in master',
+  loveKeyMaster.length === 1 && Number(paidLoveEpisode[0]?.ConsumptionItemAmount ?? 0) > 0,
+  `${loveKeyMaster.length}/${paidLoveEpisode[0]?.ConsumptionItemAmount}`,
+);
+
+// A route event must be registered before any episode can start.
+await rpc('Love:Register', token, { LoveId: loveId, Name: 'Tester' });
+
+// Level roadmap (solis `love/top.go:44-64`): reveal five-level windows and attach
+// EpisodeUnlockLevels/HintUnlockLevels to the matching row.
+const setLoveExp = (exp: number) =>
+  db
+    .update(playerLoveProgress)
+    .set({ exp })
+    .where(and(eq(playerLoveProgress.playerId, playerId), eq(playerLoveProgress.loveId, loveId)));
+const loveLevelRows = (top: Record<string, unknown>) =>
+  (top.LoveLevelInfos ?? []) as Record<string, unknown>[];
+
+await setLoveExp(0);
+const loveTopLevel1 = await rpc('Love:Top', token, { LoveId: loveId });
+const loveLevels1 = loveLevelRows(loveTopLevel1);
+check(
+  'Love:Top reveals the first five roadmap rows at level 1',
+  loveLevels1.length === 5 &&
+    loveLevels1.map((l) => Number(l.Level ?? 0)).join(',') === '1,2,3,4,5',
+  loveLevels1.map((l) => l.Level).join(','),
+);
+check(
+  'Love:Top marks the current and next roadmap rows viewable',
+  loveLevels1
+    .filter((l) => Boolean(l.IsTextViewable))
+    .map((l) => Number(l.Level ?? 0))
+    .join(',') === '1,2',
+  loveLevels1.map((l) => `${l.Level}:${l.IsTextViewable}`).join(','),
+);
+check(
+  'Love:Top attaches story unlocks to roadmap rows',
+  Number(loveLevels1.find((l) => Number(l.Level) === 1)?.UnlockStoryEpisode ?? 0) === 1 &&
+    Number(loveLevels1.find((l) => Number(l.Level) === 5)?.UnlockStoryEpisode ?? 0) === 5,
+  loveLevels1.map((l) => `${l.Level}:${l.UnlockStoryEpisode}`).join(','),
+);
+check(
+  'Love:Top keeps hint unlocks hidden below their level',
+  loveLevels1.every((l) => !l.UnlockLoveHintType),
+  loveLevels1.map((l) => `${l.Level}:${l.UnlockLoveHintType}`).join(','),
+);
+check(
+  'Love:Top sends the current route as StoryEpisodeIds',
+  JSON.stringify(loveTopLevel1.StoryEpisodeIds) === JSON.stringify([firstLoveEpisodeId]),
+  JSON.stringify(loveTopLevel1.StoryEpisodeIds),
+);
+check(
+  'Love:Top lists every catalog ending but unlocks none before the first clear',
+  ((loveTopLevel1.StoryEndInfos ?? []) as unknown[]).length === loveStandardEndingCount &&
+    ((loveTopLevel1.StoryEndInfos ?? []) as Record<string, unknown>[]).every((e) => !e.Unlocked),
+  JSON.stringify(loveTopLevel1.StoryEndInfos),
+);
+check(
+  'Love:Top keeps save slots locked before the first ending',
+  !((loveTopLevel1.SaveInfo as Record<string, unknown> | undefined)?.Unlocked),
+  JSON.stringify(loveTopLevel1.SaveInfo),
+);
+
+await setLoveExp(270000);
+const loveTopLevel6 = await rpc('Love:Top', token, { LoveId: loveId });
+const loveLevels6 = loveLevelRows(loveTopLevel6);
+check(
+  'Love:Top reveals ten roadmap rows at level 6',
+  loveLevels6.length === 10 &&
+    loveLevels6.map((l) => Number(l.Level ?? 0)).join(',') === '1,2,3,4,5,6,7,8,9,10',
+  loveLevels6.map((l) => l.Level).join(','),
+);
+check(
+  'Love:Top marks every row through the next level viewable',
+  loveLevels6
+    .filter((l) => Boolean(l.IsTextViewable))
+    .map((l) => Number(l.Level ?? 0))
+    .join(',') === '1,2,3,4,5,6,7',
+  loveLevels6.map((l) => `${l.Level}:${l.IsTextViewable}`).join(','),
+);
+check(
+  'Love:Top attaches hint unlocks to roadmap rows',
+  Number(loveLevels6.find((l) => Number(l.Level) === 9)?.UnlockLoveHintType ?? 0) === 1 &&
+    Number(loveLevels6.find((l) => Number(l.Level) === 10)?.UnlockLoveHintType ?? 0) === 2,
+  loveLevels6.map((l) => `${l.Level}:${l.UnlockLoveHintType}`).join(','),
+);
+await setLoveExp(860000);
+
+// Save slots unlock with the first ending (solis common.go:141-157).
+let loveSaveBeforeEndingRejected = false;
+try {
+  await rpc('Love:Save', token, { LoveId: loveId, SlotNumber: 1 });
+} catch {
+  loveSaveBeforeEndingRejected = true;
+}
+check('Love:Save is rejected before the first ending', loveSaveBeforeEndingRejected);
+
+let loveOffRouteRejected = false;
+try {
+  await rpc('Love:Start', token, { StoryEpisodeId: 'love-event-story-love-23-0514-003' });
+} catch {
+  loveOffRouteRejected = true;
+}
+check('Love:Start rejects an episode that is not on the current route', loveOffRouteRejected);
+
+const firstLoveStart = await rpc('Love:Start', token, { StoryEpisodeId: firstLoveEpisodeId });
+const firstLoveChoices = (firstLoveStart.StoryChoiceGroupInfos ?? []) as Record<string, unknown>[];
+check('Love:Start returns non-empty ChoiceInfos', firstLoveChoices.length > 0, firstLoveChoices.length);
+const firstLoveBranches = (firstLoveStart.AdvBranchInfos ?? []) as Record<string, unknown>[];
+check('Love:Start returns a BranchInfos list', Array.isArray(firstLoveBranches), firstLoveBranches.length);
+
+let loveInvalidChoiceRejected = false;
+try {
+  await finishLoveEpisode(firstLoveEpisodeId, [[1, 99]]);
+} catch {
+  loveInvalidChoiceRejected = true;
+}
+check('Love:Finish rejects an invalid choice', loveInvalidChoiceRejected);
+
+const firstLoveFinish = await finishLoveEpisode(firstLoveEpisodeId, loveRoutePath[0][1]);
+check(
+  'Love:Finish of episode 1 is not an ending',
+  !firstLoveFinish.StoryEndName,
+  firstLoveFinish.StoryEndName,
+);
+const afterFirstLoveFinish = await loveRouteErrorDetails();
+check(
+  'Love:Finish appends the next episode to the route',
+  Array.isArray(afterFirstLoveFinish?.storyEpisodeIds) &&
+    afterFirstLoveFinish.storyEpisodeIds.includes(paidLoveEpisodeId),
+  JSON.stringify(afterFirstLoveFinish?.storyEpisodeIds),
+);
+check(
+  'Love:Finish stores the chosen selections on the route',
+  Array.isArray(afterFirstLoveFinish?.selections) && afterFirstLoveFinish.selections.length === 2,
+  JSON.stringify(afterFirstLoveFinish?.selections),
+);
+check(
+  'Love:Finish records past choices for hint lookup',
+  Array.isArray(afterFirstLoveFinish?.pastSelections) &&
+    afterFirstLoveFinish.pastSelections.length === 2,
+  JSON.stringify(afterFirstLoveFinish?.pastSelections),
+);
+
+const loveTopAfterFirstFinish = await rpc('Love:Top', token, { LoveId: loveId });
+check(
+  'Love:Top follows the advanced route',
+  Array.isArray(loveTopAfterFirstFinish.StoryEpisodeIds) &&
+    (loveTopAfterFirstFinish.StoryEpisodeIds as string[]).includes(paidLoveEpisodeId),
+  JSON.stringify(loveTopAfterFirstFinish.StoryEpisodeIds),
+);
+check(
+  'Love:Top keeps every catalog ending listed but locked before a clear',
+  ((loveTopAfterFirstFinish.StoryEndInfos ?? []) as unknown[]).length ===
+    loveStandardEndingCount &&
+    ((loveTopAfterFirstFinish.StoryEndInfos ?? []) as Record<string, unknown>[]).every(
+      (e) => !e.Unlocked,
+    ),
+  JSON.stringify(loveTopAfterFirstFinish.StoryEndInfos),
+);
+
+const loveKeyBefore = (await listElements(playerId, 'Items', db)).find(
+  (i) => String(i.ItemId ?? '') === loveStoryItemId,
+);
+check(
+  'Love story key is stocked to the sandbox ceiling',
+  Number(loveKeyBefore?.Amount ?? -1) === SANDBOX_CURRENCY,
+  loveKeyBefore?.Amount,
+);
+const loveStart = await rpc('Love:Start', token, { StoryEpisodeId: paidLoveEpisodeId });
+const loveStartItems = ((loveStart.CommonResponse as any)?.UpdatedData?.Items ?? []) as Record<
+  string,
+  unknown
+>[];
+const loveStartItem = loveStartItems.find((i) => String(i.ItemId ?? '') === loveStoryItemId);
+check(
+  'Love:Start echoes the untouched story key',
+  Number(loveStartItem?.Amount ?? -1) === SANDBOX_CURRENCY,
+  loveStartItem?.Amount,
+);
+const loveKeyAfter = (await listElements(playerId, 'Items', db)).find(
+  (i) => String(i.ItemId ?? '') === loveStoryItemId,
+);
+check(
+  'Love:Start leaves the story key at the sandbox ceiling',
+  Number(loveKeyAfter?.Amount ?? -1) === SANDBOX_CURRENCY,
+  loveKeyAfter?.Amount,
+);
+
+// Play the rest of the route to the canonical TRUE ending
+// (`love-end-love-23-0514-008-happy-002`, end roll `event_2305_02_02`).
+let lastLoveFinish: Record<string, unknown> = await finishLoveEpisode(
+  paidLoveEpisodeId,
+  loveRoutePath[1][1],
+);
+for (const [episode, choices] of loveRoutePath.slice(2)) {
+  const start = await rpc('Love:Start', token, { StoryEpisodeId: episode });
+  const choiceInfos = (start.StoryChoiceGroupInfos ?? []) as Record<string, unknown>[];
+  check(`Love:Start returns choices for ${episode}`, choiceInfos.length > 0, choiceInfos.length);
+  lastLoveFinish = await finishLoveEpisode(episode, choices);
+}
+check(
+  'Love:Finish returns the ending name',
+  lastLoveFinish.StoryEndName === 'TRUE エンド',
+  lastLoveFinish.StoryEndName,
+);
+check(
+  'Love:Finish returns the ending end-roll asset',
+  lastLoveFinish.EndRollAssetId === 'event_2305_02_02',
+  lastLoveFinish.EndRollAssetId,
+);
+check(
+  'Love:Finish unlocks the save on the first ending',
+  Boolean(lastLoveFinish.UnlockSave),
+  lastLoveFinish.UnlockSave,
+);
+const lovesAfterRoute = await listElements(playerId, 'Loves', db);
+const loveAfterRoute = lovesAfterRoute.find((l) => String(l.LoveId ?? '') === loveId);
+check(
+  'Love:Finish unlocks the canonical ending',
+  Array.isArray(loveAfterRoute?.UnlockedLoveStoryEndIDs) &&
+    (loveAfterRoute.UnlockedLoveStoryEndIDs as string[]).includes(
+      'love-end-love-23-0514-008-happy-002',
+    ),
+  JSON.stringify(loveAfterRoute?.UnlockedLoveStoryEndIDs),
+);
+check(
+  'Love:Finish adds the ending favorability',
+  Number(loveAfterRoute?.HiddenFavorability ?? 0) > 0,
+  loveAfterRoute?.HiddenFavorability,
+);
+const afterEnding = await loveRouteErrorDetails();
+check(
+  'an ending restarts the route at episode 1',
+  JSON.stringify(afterEnding?.storyEpisodeIds) === JSON.stringify([firstLoveEpisodeId]),
+  JSON.stringify(afterEnding?.storyEpisodeIds),
+);
+check(
+  'an ending clears the active episode',
+  afterEnding?.activeStoryEpisodeId === '',
+  afterEnding?.activeStoryEpisodeId,
+);
+
+const loveTopAfterClear = await rpc('Love:Top', token, { LoveId: loveId });
+const loveTopEnds = (loveTopAfterClear.StoryEndInfos ?? []) as Record<string, unknown>[];
+check(
+  'Love:Top lists every catalog ending after the first clear',
+  loveTopEnds.length === loveStandardEndingCount,
+  loveTopEnds.length,
+);
+check(
+  'Love:Top marks exactly the cleared ending unlocked',
+  loveTopEnds.filter((e) => Boolean(e.Unlocked)).length === 1 &&
+    loveTopEnds.some(
+      (e) => e.Id === 'love-end-love-23-0514-008-happy-002' && Boolean(e.Unlocked),
+    ),
+  JSON.stringify(loveTopEnds.map((e) => `${e.Id}:${e.Unlocked}`)),
+);
+
+// Top must derive the save gate from UnlockedLoveStoryEndIDs, not the stored
+// save_unlocked column (solis top.go:40).
+await db
+  .update(playerLoveProgress)
+  .set({ saveUnlocked: false })
+  .where(and(eq(playerLoveProgress.playerId, playerId), eq(playerLoveProgress.loveId, loveId)));
+const loveTopForcedLocked = await rpc('Love:Top', token, { LoveId: loveId });
+check(
+  'Love:Top derives save unlock from endings, ignoring stored save_unlocked',
+  Boolean((loveTopForcedLocked.SaveInfo as Record<string, unknown> | undefined)?.Unlocked),
+  JSON.stringify(loveTopForcedLocked.SaveInfo),
+);
+
+// Save/Load: a slot snapshots the whole route and Load restores it exactly
+// (solis save.go:15-48 / load.go:17-55).
+await rpc('Love:Save', token, { LoveId: loveId, SlotNumber: 1 });
+const afterSave = await loveRouteErrorDetails();
+const savedSlot1 = afterSave?.saveSlots.find((s) => s.slotNumber === 1);
+check(
+  'Love:Save snapshots the route in the slot',
+  Array.isArray(savedSlot1?.storyEpisodeIds) &&
+    JSON.stringify(savedSlot1.storyEpisodeIds) === JSON.stringify(afterEnding?.storyEpisodeIds) &&
+    Array.isArray(savedSlot1?.selections) &&
+    savedSlot1.selections.length === (afterEnding?.selections.length ?? -1),
+  JSON.stringify(savedSlot1?.storyEpisodeIds),
+);
+check(
+  'Love:Save stores the current episode',
+  savedSlot1?.latestStoryEpisodeId === firstLoveEpisodeId,
+  savedSlot1?.latestStoryEpisodeId,
+);
+const loveAfterEnding = (await listElements(playerId, 'Loves', db)).find(
+  (l) => String(l.LoveId ?? '') === loveId,
+);
+const loveFavorabilityAfterEnding = Number(loveAfterEnding?.HiddenFavorability ?? 0);
+
+// Play episode 1 down a different branch; the saved slot must not change.
+await rpc('Love:Start', token, { StoryEpisodeId: firstLoveEpisodeId });
+await finishLoveEpisode(firstLoveEpisodeId, [[1, 1], [2, 1]]);
+const afterOtherBranch = await loveRouteErrorDetails();
+check(
+  'a different branch advances the route',
+  JSON.stringify(afterOtherBranch?.storyEpisodeIds) ===
+    JSON.stringify([firstLoveEpisodeId, paidLoveEpisodeId]),
+  JSON.stringify(afterOtherBranch?.storyEpisodeIds),
+);
+
+const loveLoad = await rpc('Love:Load', token, { LoveId: loveId, SlotNumber: 1 });
+check(
+  'Love:Load returns the saved route',
+  JSON.stringify(loveLoad.StoryEpisodeIds) === JSON.stringify(savedSlot1?.storyEpisodeIds),
+  JSON.stringify(loveLoad.StoryEpisodeIds),
+);
+const afterLoad = await loveRouteErrorDetails();
+check(
+  'Love:Load restores the saved route exactly',
+  JSON.stringify(afterLoad?.storyEpisodeIds) ===
+    JSON.stringify(savedSlot1?.storyEpisodeIds) &&
+    JSON.stringify(afterLoad?.selections) === JSON.stringify(savedSlot1?.selections),
+  JSON.stringify(afterLoad?.storyEpisodeIds),
+);
+check(
+  'Love:Load clears the active episode',
+  afterLoad?.activeStoryEpisodeId === '',
+  afterLoad?.activeStoryEpisodeId,
+);
+const loveAfterLoad = (await listElements(playerId, 'Loves', db)).find(
+  (l) => String(l.LoveId ?? '') === loveId,
+);
+check(
+  'Love:Load keeps the unlocked ending',
+  Array.isArray(loveAfterLoad?.UnlockedLoveStoryEndIDs) &&
+    (loveAfterLoad.UnlockedLoveStoryEndIDs as string[]).includes(
+      'love-end-love-23-0514-008-happy-002',
+    ),
+  JSON.stringify(loveAfterLoad?.UnlockedLoveStoryEndIDs),
+);
+check(
+  'Love:Load restores the saved favorability',
+  Number(loveAfterLoad?.HiddenFavorability ?? 0) === loveFavorabilityAfterEnding,
+  `${loveAfterLoad?.HiddenFavorability}/${loveFavorabilityAfterEnding}`,
+);
+check(
+  'Love:Load keeps past selections',
+  (afterSave?.pastSelections ?? []).every((past) =>
+    (afterLoad?.pastSelections ?? []).some(
+      (now) =>
+        now.storyEpisodeId === past.storyEpisodeId &&
+        now.groupIndex === past.groupIndex &&
+        now.index === past.index,
+    ),
+  ),
+  JSON.stringify(afterLoad?.pastSelections),
+);
+check('Love:Load clears the reading flag', !loveAfterLoad?.IsReadingStory);
+
+// Reset rewinds only the current route; saves and endings stay
+// (solis reset.go:13-41).
+let loveOutOfRangeRejected = 0;
+for (const SlotNumber of [0, 6]) {
+  try {
+    await rpc('Love:Save', token, { LoveId: loveId, SlotNumber });
+  } catch {
+    loveOutOfRangeRejected += 1;
+  }
+}
+check('Love:Save rejects an out-of-range slot', loveOutOfRangeRejected === 2, loveOutOfRangeRejected);
+
+const loveReset = await rpc('Love:Reset', token, { LoveId: loveId });
+check(
+  'Love:Reset returns the first episode',
+  JSON.stringify(loveReset.StoryEpisodeIds) === JSON.stringify([firstLoveEpisodeId]),
+  JSON.stringify(loveReset.StoryEpisodeIds),
+);
+const afterReset = await loveRouteErrorDetails();
+check(
+  'Love:Reset rewinds the route to the first episode',
+  JSON.stringify(afterReset?.storyEpisodeIds) === JSON.stringify([firstLoveEpisodeId]) &&
+    Array.isArray(afterReset?.selections) &&
+    afterReset.selections.length === 0,
+  JSON.stringify(afterReset?.storyEpisodeIds),
+);
+check(
+  'Love:Reset clears the active episode',
+  afterReset?.activeStoryEpisodeId === '',
+  afterReset?.activeStoryEpisodeId,
+);
+check(
+  'Love:Reset keeps the save slot',
+  afterReset?.saveSlots.length === 1 &&
+    afterReset.saveSlots[0].slotNumber === 1 &&
+    JSON.stringify(afterReset.saveSlots[0].storyEpisodeIds) ===
+      JSON.stringify(savedSlot1?.storyEpisodeIds),
+  JSON.stringify(afterReset?.saveSlots),
+);
+const loveAfterReset = (await listElements(playerId, 'Loves', db)).find(
+  (l) => String(l.LoveId ?? '') === loveId,
+);
+check(
+  'Love:Reset keeps the unlocked ending',
+  Array.isArray(loveAfterReset?.UnlockedLoveStoryEndIDs) &&
+    (loveAfterReset.UnlockedLoveStoryEndIDs as string[]).includes(
+      'love-end-love-23-0514-008-happy-002',
+    ),
+  JSON.stringify(loveAfterReset?.UnlockedLoveStoryEndIDs),
+);
+check(
+  'Love:Reset keeps the favorability',
+  Number(loveAfterReset?.HiddenFavorability ?? 0) === loveFavorabilityAfterEnding,
+  `${loveAfterReset?.HiddenFavorability}/${loveFavorabilityAfterEnding}`,
+);
+check('Love:Reset clears the reading flag', !loveAfterReset?.IsReadingStory);
+
+// A second ending must not re-unlock the save (solis finish.go:60-66).
+await rpc('Love:Start', token, { StoryEpisodeId: firstLoveEpisodeId });
+const secondEndingFinish = await finishLoveEpisode(firstLoveEpisodeId, [
+  [1, 2],
+  [2, 2],
+]);
+check(
+  'Love:Finish unlocks the save only on the first ending',
+  secondEndingFinish.StoryEndName === 'オトクオトクエンド' && !secondEndingFinish.UnlockSave,
+  `${secondEndingFinish.StoryEndName}/${secondEndingFinish.UnlockSave}`,
+);
+const lovesAfterSecondEnding = await listElements(playerId, 'Loves', db);
+const loveAfterSecondEnding = lovesAfterSecondEnding.find(
+  (l) => String(l.LoveId ?? '') === loveId,
+);
+check(
+  'Love:Finish keeps every unlocked ending',
+  Array.isArray(loveAfterSecondEnding?.UnlockedLoveStoryEndIDs) &&
+    (loveAfterSecondEnding.UnlockedLoveStoryEndIDs as string[]).includes(
+      'love-end-love-23-0514-001-bad',
+    ) &&
+    (loveAfterSecondEnding.UnlockedLoveStoryEndIDs as string[]).includes(
+      'love-end-love-23-0514-008-happy-002',
+    ),
+  JSON.stringify(loveAfterSecondEnding?.UnlockedLoveStoryEndIDs),
+);
 
 // ---------------------------------------------------------------------------
 // Lobby idol switch: Home:SetCharacterPosition persists per slot type.

@@ -3,9 +3,9 @@ contact_links:
   - name: Feature requests and prioritisation
     url: https://github.com/project-hoshimi/sumire-sr/discussions
     about: Propose features, vote in prioritisation polls, and ask about roadmap scope.
-  - name: Data access
-    url: https://github.com/project-hoshimi/sumire-sr/discussions
-    about: Ask the maintainers for private game-data access. Data is not distributed publicly.
+  - name: Game data
+    url: https://github.com/project-hoshimi/sumire-sr-data
+    about: The published master data and scrubbed captures. Fetch it with npm run data:fetch.
   - name: Security reports
     url: https://github.com/project-hoshimi/sumire-sr/security/advisories/new
     about: Report vulnerabilities privately. Do not open a public issue.

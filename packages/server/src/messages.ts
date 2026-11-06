@@ -4,7 +4,7 @@
  * Edit `locales/messages.json` to change or translate dialog text; `SUMIRE_LANG`
  * picks the language (default `en`) and `SUMIRE_MESSAGES` points at another file.
  */
-import 'dotenv/config';
+import './env.ts';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 

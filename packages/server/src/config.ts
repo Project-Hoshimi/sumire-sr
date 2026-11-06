@@ -1,11 +1,12 @@
-import 'dotenv/config';
+import './env.ts';
 import { join, resolve } from 'node:path';
 
 /**
  * Root of the data tree: the directory that holds `captures/`, `phaseA2/` and
  * `phase3d/`. Defaults to the repository root (computed from this file) so an
- * unset environment behaves exactly as before. `SUMIRE_DATA_DIR` must point at
- * an absolute path; relative values are resolved against the process cwd.
+ * unset environment behaves exactly as before. A relative `SUMIRE_DATA_DIR` in
+ * .env is relative to that file (see env.ts); one set in the environment is
+ * relative to the process cwd.
  */
 export const DATA_DIR = process.env.SUMIRE_DATA_DIR
   ? resolve(process.env.SUMIRE_DATA_DIR)
@@ -40,6 +41,31 @@ export const config = {
 
 export function hasJwtKeys(): boolean {
   return config.jwt.privateKeyPem.length > 0 && config.jwt.publicKeyPem.length > 0;
+}
+
+/**
+ * CA that signs the game leaf (`tls/api.crt`). Defaults to the repository
+ * `tls/ca.crt`, resolved from this file just like `tls.ts` resolves the leaf;
+ * `TLS_CA_CERT` overrides it (relative values resolve against the process cwd).
+ * Read on every call so tests can point a server at a missing file.
+ */
+export function tlsCaCertPath(): string {
+  return process.env.TLS_CA_CERT
+    ? resolve(process.env.TLS_CA_CERT)
+    : join(import.meta.dirname, '..', '..', 'tls', 'ca.crt');
+}
+
+/**
+ * Public-cert-by-SNI settings. All three of `TLS_PUBLIC_HOSTNAME`,
+ * `TLS_PUBLIC_CERT` and `TLS_PUBLIC_KEY` must be set; otherwise this returns
+ * null and the HTTPS server keeps its single default (game leaf) context.
+ */
+export function publicTlsConfig(): { hostname: string; certPath: string; keyPath: string } | null {
+  const hostname = process.env.TLS_PUBLIC_HOSTNAME;
+  const certPath = process.env.TLS_PUBLIC_CERT;
+  const keyPath = process.env.TLS_PUBLIC_KEY;
+  if (!hostname || !certPath || !keyPath) return null;
+  return { hostname, certPath: resolve(certPath), keyPath: resolve(keyPath) };
 }
 
 /**

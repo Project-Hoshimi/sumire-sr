@@ -1,0 +1,37 @@
+{
+  "loveId": "love-24-0517",
+  "name": "もし恋 ~もしも君と恋をしたら~",
+  "description": "早坂芽衣編",
+  "startTime": 1715914800000,
+  "unlockConditionId": "cd-clear-area-main-002",
+  "bannerAssetId": "img_banner_l_event-love-24-1209",
+  "characterId": "char-mei",
+  "costumeId": "cos-mei-casl-02",
+  "characterAssetId": "img_chr_mem_mei",
+  "color": "E03E52",
+  "storyReadItemId": "item-love-24-0517-story",
+  "presentItemId": "item-love-24-0517-present",
+  "promoteItemId": "item-love-24-0517-lesson-boost",
+  "lessonMaxHours": 12,
+  "eventMissionIds": [
+    "event-love-24-0517-normal",
+    "event-love-24-0517-normal-card"
+  ],
+  "limitedEventMissionIds": [
+    "event-love-24-0517-limited"
+  ],
+  "episodeUnlockLevels": {
+    "1": 1,
+    "2": 2,
+    "3": 3,
+    "4": 4,
+    "5": 5,
+    "6": 6,
+    "7": 7,
+    "8": 8
+  },
+  "hintUnlockLevels": {
+    "1": 9,
+    "2": 10
+  }
+}

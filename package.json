@@ -11,6 +11,7 @@
     "test": "npm run test:unit -w packages/server && npm run test:crypto -w @sumire-sr/protocol",
     "check": "npm run typecheck && npm run test",
     "check:full": "npm run check && npm run test:full -w packages/server",
+    "data:fetch": "bash scripts/fetch-data.sh",
     "docs:endpoints": "node scripts/gen-endpoints.mjs"
   },
   "engines": {

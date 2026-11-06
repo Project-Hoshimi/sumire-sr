@@ -13,20 +13,15 @@ import { UnauthenticatedError, AppRpcError, INVITE_ONLY_LOGIN_ERROR } from './er
 import { message } from '../messages.ts';
 import type { Decoded } from '@sumire-sr/protocol/runtime/proto.ts';
 import { FRESH_SEED } from './playerState.ts';
+import { pinnedIdentityForUid, type PinnedIdentity } from './identity.ts';
 
 const USER_PUBLIC_MSG = 'Solis.Common.Proto.Transaction.UserPublic';
 
-// Identity of the account captured in the replay corpus (captures/2026-09-14_a12r).
-// We pin these so the M1 replay surface (User:Get, Home:*, ...) stays byte-consistent
-// for the existing device account. New accounts get fresh generated identities.
-const CAPTURED_FIREBASE_UID = '2eab1baa-7e88-4397-bb0e-66ac9f6a1f76';
-const CAPTURED_SERVER_USER_ID = '61afc1af-a05b-41d4-af9c-a10f907130a0';
-const CAPTURED_PUBLIC_USER_ID = '5W5WHXGS';
-
-// Player stats captured for the corpus account (captures/2026-09-14_a12r User:Get).
-// Used to seed the pinned account so the M1 surface stays consistent; brand-new
-// accounts start from the defaults below.
-const CAPTURED_PLAYER = { name: 'genesis', level: 40, exp: 1335246, gold: 1707717, freeJewel: 10670 };
+// The account captured in the replay corpus (captures/2026-09-14_a12r) is
+// optionally pinned by `captures/identity.json` in the data tree. When that
+// private file is present we reuse its identifiers/stats so the M1 replay
+// surface (User:Get, Home:*, ...) stays byte-consistent for the device account.
+// Without it every account, including that one, is treated as new.
 const NEW_PLAYER = { name: 'Player', level: 1, exp: 0, gold: 0, freeJewel: 0 };
 
 const ID_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
@@ -66,10 +61,10 @@ async function insertPlayerRow(
   executor: Executor,
   accountId: string,
   publicUserId: string,
-  captured: boolean,
+  pinned: PinnedIdentity | null,
 ): Promise<string> {
-  const serverUserId = captured ? CAPTURED_SERVER_USER_ID : randomUUID();
-  const seed = captured ? CAPTURED_PLAYER : NEW_PLAYER;
+  const serverUserId = pinned ? pinned.serverUserId : randomUUID();
+  const seed = pinned ? pinned.player : NEW_PLAYER;
   await executor.insert(players).values({
     id: serverUserId,
     accountId,
@@ -78,7 +73,7 @@ async function insertPlayerRow(
     exp: seed.exp,
     gold: seed.gold,
     freeJewel: seed.freeJewel,
-    data: captured ? { publicUserId } : { publicUserId, seed: FRESH_SEED },
+    data: pinned ? { publicUserId } : { publicUserId, seed: FRESH_SEED },
   });
   return serverUserId;
 }
@@ -92,10 +87,12 @@ export async function createAccountWithPlayer(
   executor: Executor,
   firebaseUid: string | null,
 ): Promise<Identity> {
-  const captured = firebaseUid === CAPTURED_FIREBASE_UID;
+  // A brand-new account reuses the captured identifiers only when this Firebase
+  // UID is the pinned account. Otherwise the identifiers are generated.
+  const pinned = pinnedIdentityForUid(firebaseUid);
   const accountId = randomUUID();
-  const publicUserId = captured ? CAPTURED_PUBLIC_USER_ID : genPublicUserId();
-  const seed = captured ? CAPTURED_PLAYER : NEW_PLAYER;
+  const publicUserId = pinned ? pinned.publicUserId : genPublicUserId();
+  const seed = pinned ? pinned.player : NEW_PLAYER;
   await executor.insert(accounts).values({
     id: accountId,
     firebaseUid,
@@ -103,13 +100,13 @@ export async function createAccountWithPlayer(
     displayName: seed.name,
     lastLoginAt: new Date(),
   });
-  const serverUserId = await insertPlayerRow(executor, accountId, publicUserId, captured);
+  const serverUserId = await insertPlayerRow(executor, accountId, publicUserId, pinned);
   return { accountId, serverUserId, publicUserId };
 }
 
 /** Find or create the account + player rows for an already-resolved Firebase UID. */
 export async function findOrCreateIdentityByUid(uid: string): Promise<Identity> {
-  const captured = uid === CAPTURED_FIREBASE_UID;
+  const pinned = pinnedIdentityForUid(uid);
 
   const [acct] = await db.select().from(accounts).where(eq(accounts.firebaseUid, uid)).limit(1);
   if (!acct) {
@@ -121,7 +118,7 @@ export async function findOrCreateIdentityByUid(uid: string): Promise<Identity> 
   const [pl] = await db.select().from(players).where(eq(players.accountId, acct.id)).limit(1);
   if (!pl) {
     const publicUserId = acct.seedId ?? genPublicUserId();
-    const serverUserId = await insertPlayerRow(db, acct.id, publicUserId, captured);
+    const serverUserId = await insertPlayerRow(db, acct.id, publicUserId, pinned);
     await seedSandboxIfNeeded(serverUserId);
     return { accountId: acct.id, serverUserId, publicUserId };
   }

@@ -8,7 +8,7 @@ Canonical guide for LLM coding agents and human contributors. `CLAUDE.md` points
 |---|---|
 | `packages/protocol/` | `@sumire-sr/protocol`: JSON schema descriptors in `schemas/`, generated TypeScript in `src/gen/` (never hand-edited), codec runtime in `src/runtime/proto.ts`, wire crypto in `src/crypto.cjs`, codegen in `codegen/`, and the capture decoder. |
 | `packages/server/` | Fastify 5 + TypeScript server, PostgreSQL 18 + Drizzle. Services in `src/services/*.ts`; router in `src/services/router.ts`; profile switch in `src/profile.ts`; sandbox overrides in `src/profiles/sandbox/`. |
-| `toolchain/` | il2cpp schema extraction, master-data harvest, and generated artefacts. Needs private game data. |
+| `toolchain/` | il2cpp schema extraction, master-data harvest, and generated artefacts. Uses the data fetched into `./data`. |
 | `client/` | Frida scripts and emulator helpers for pointing the game client at a server. |
 | `docs/` | Curated docs. `docs/ENDPOINTS.md` is generated; do not edit it by hand. |
 
@@ -49,8 +49,9 @@ Handlers are registered at import time with `register('Service:Method', handler,
 ## Hard rules
 
 - **Never hand-edit `packages/protocol/src/gen/`.** It is generated. Change `packages/protocol/schemas/` or `packages/protocol/codegen/`, then run `npm run gen`.
-- **Never commit game data, captures, keys, or `.env`.** This includes APKs, dumps, master blobs, `*.db`, `*.dump`, `*.pem`, `*.key`, and anything under `captures/`, `keys/`, `backups/`, `phase3d*/`, or `phaseA2/`.
-- **Never hardcode `WIRE_SEC_KEY`.** Read it from the environment. The key is distributed privately by maintainers and must never appear in source, tests, fixtures, logs, or CI.
+- **Never commit game data, captures, real account tokens, or personal data to this repository.** Master data and scrubbed captures live in the separate `sumire-sr-data` repo; `npm run data:fetch` puts them in the git-ignored `./data`. This repository still excludes APKs, dumps, raw logs, `*.db`, `*.dump`, `*.pem`, `*.key`, `.env`, `keys/`, `backups/`, `captures/`, `phase3d*/`, and `phaseA2/`.
+- **`WIRE_SEC_KEY` is a static client constant, not a secret.** It is embedded in every game client, so `.env.example` ships it and all users share it. Never replace it with a private value or commit real account tokens.
+- **Never commit real account tokens or personal data.** Scrubbed captures and the published identity placeholder are safe; real Firebase UIDs, server user IDs, tokens, names, emails, and IPs are not.
 - **Do not change official behaviour while adding sandbox overrides.** Default profile is `sandbox` (`official` must be set explicitly), but every sandbox branch is still guarded with `isSandbox()` so the official path stays untouched.
 - **Do not change wire shapes without schema and capture evidence.** Field numbers, wire types, and enum values are compatibility surfaces.
 - **Do not add Redis, gRPC frameworks, or FastAPI.** The stack is Fastify + PostgreSQL + Drizzle.
@@ -62,9 +63,9 @@ Handlers are registered at import time with `register('Service:Method', handler,
 
 | Variable | Purpose |
 |---|---|
-| `SUMIRE_DATA_DIR` | Path to private game data used by the server and toolchain. Required for a functional server; optional for data-free checks and CI. |
+| `SUMIRE_DATA_DIR` | Path to game data. Defaults to `./data`, populated by `npm run data:fetch`; optional for data-free checks and CI. |
 | `SUMIRE_PROFILE` | `sandbox` or `official`. Unset means `official`. |
-| `WIRE_SEC_KEY` | Wire-crypto secret from a maintainer. Never committed. |
+| `WIRE_SEC_KEY` | Static wire-crypto client constant shipped in `.env.example`. Not a secret. |
 | `JWT_PRIVATE_KEY_PATH` | RS256 signing key path. Generated on first boot if missing. |
 | `DATABASE_URL` | PostgreSQL 18 connection string. |
 
@@ -73,6 +74,9 @@ Handlers are registered at import time with `register('Service:Method', handler,
 | Command | Purpose |
 |---|---|
 | `npm install` | Install the workspace. |
+| `npm run data:fetch` | Shallow-clone the published data repo at `DATA_VERSION` into `./data`. |
+| `npm run -w packages/server db:migrate` | Apply database migrations. |
+| `npm run -w packages/server db:seed-master` | Load master data from `./data/phaseA2`. |
 | `npm run check` | Typecheck and run the data-free test suite. The required pre-PR gate. |
 | `npm run check:full` | `check` plus the data/PostgreSQL-dependent server tests. |
 | `npm run gen` | Regenerate `packages/protocol/src/gen/` from schema descriptors. |

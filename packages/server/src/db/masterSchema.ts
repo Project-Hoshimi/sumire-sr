@@ -925,6 +925,14 @@ export const masterSetting = pgTable(
     LiveHeavyFanAmountWeightPermil: bigint('LiveHeavyFanAmountWeightPermil', { mode: 'number' }),
     PhotoShootingItemThresholds: jsonb('PhotoShootingItemThresholds'),
     StoryPhotoShootingDefaultCharacterId: text('StoryPhotoShootingDefaultCharacterId'),
+    ActivityLessonPromoteLimitCount: bigint('ActivityLessonPromoteLimitCount', { mode: 'number' }),
+    ActivityLessonPromoteRequiredStoneAmount: bigint('ActivityLessonPromoteRequiredStoneAmount', {
+      mode: 'number',
+    }),
+    ActivityLessonPromoteEffectHours: bigint('ActivityLessonPromoteEffectHours', { mode: 'number' }),
+    ActivityLessonPromoteFreeLimitCount: bigint('ActivityLessonPromoteFreeLimitCount', {
+      mode: 'number',
+    }),
   },
   (t) => [uniqueIndex('master_setting_id_idx').on(t.Id)],
 );
@@ -1405,4 +1413,52 @@ export const masterCompanyEnjoyObtainPointItemSetting = pgTable(
   (t) => [
     uniqueIndex('master_company_enjoy_obtain_point_item_key_idx').on(t.CharacterId, t.ItemId),
   ],
+);
+
+// Area (エリア) presentation and daily limits. `QuestIds` references the
+// quests shown for the area; the condition tables hold the client-side
+// visibility/unlock settings.
+export const masterArea = pgTable(
+  'master_Area',
+  {
+    Id: text('Id').notNull(),
+    Type: bigint('Type', { mode: 'number' }),
+    Name: text('Name'),
+    Description: text('Description'),
+    Order: bigint('Order', { mode: 'number' }),
+    AreaGroupId: text('AreaGroupId'),
+    ViewConditionId: text('ViewConditionId'),
+    UnlockConditionId: text('UnlockConditionId'),
+    DailyLimitCount: bigint('DailyLimitCount', { mode: 'number' }),
+    DailyTicketItemType: bigint('DailyTicketItemType', { mode: 'number' }),
+    RewardAssetId: text('RewardAssetId'),
+    AssetId: text('AssetId'),
+    ColorCode: text('ColorCode'),
+    DailySpecialTicketItemId: text('DailySpecialTicketItemId'),
+    DailyRewardName: text('DailyRewardName'),
+    QuestIds: jsonb('QuestIds'),
+  },
+  (t) => [uniqueIndex('master_area_id_idx').on(t.Id)],
+);
+
+export const masterCondition = pgTable(
+  'master_Condition',
+  {
+    Id: text('Id').notNull(),
+    Settings: jsonb('Settings'),
+  },
+  (t) => [uniqueIndex('master_condition_id_idx').on(t.Id)],
+);
+
+// Manager level progression (the old 0022 migration never reached main).
+export const masterManagerLevel = pgTable(
+  'master_ManagerLevel',
+  {
+    Level: bigint('Level', { mode: 'number' }).notNull(),
+    RequiredExp: bigint('RequiredExp', { mode: 'number' }),
+    MaxCardLevel: bigint('MaxCardLevel', { mode: 'number' }),
+    MaxPhotoEnhanceLevel: bigint('MaxPhotoEnhanceLevel', { mode: 'number' }),
+    MaxPhotoReportLevel: bigint('MaxPhotoReportLevel', { mode: 'number' }),
+  },
+  (t) => [uniqueIndex('master_manager_level_key_idx').on(t.Level)],
 );

@@ -71,7 +71,7 @@ Client (HoshimiLocalify-sr, approved 2026-10-25; as built, see §6):
 ## 4. Risks / open questions
 - Is the call order in §1 right? Check it on device: the server logs every RPC.
 - Does the SDK call any other endpoint on first sign-in (`firebaseinstallations`, App Check)? The emulator logs and 404s anything unknown, which is how we find out.
-- Existing accounts (A, `5W5WHXGS`) keep their real Google session. Once Firebase is redirected, their refresh goes to us and fails. The fix is for `/v1/token` to accept unknown refresh tokens, or to recover through `Auth:Recreate`. Test this before redirecting on a device whose account matters.
+- Existing accounts (such as account A) keep their real Google session. Once Firebase is redirected, their refresh goes to us and fails. The fix is for `/v1/token` to accept unknown refresh tokens, or to recover through `Auth:Recreate`. Test this before redirecting on a device whose account matters.
 
 ## 5. Implemented (server side)
 - `Auth:Create` and `Auth:Recreate` are registered in `fastify-api/src/services/auth.ts`; identity lookup is shared through `findOrCreateIdentityByUid(uid)`. `Auth:Create` generates a 28-char base62 uid when `FirebaseUID` is empty.

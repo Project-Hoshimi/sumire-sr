@@ -5,6 +5,8 @@ shutdown steps are in the README, under "Shutting down the dev environment".
 The systemd and `journalctl` commands in `SESSION_STATE.md` and
 `DEVICE_RUNBOOK.md` are for the old Linux host. Do not use them here.
 
+See [`docs/CLIENT_CONNECT.md`](CLIENT_CONNECT.md) for joining from the in-game **Add private server** dialog.
+
 ## Pieces
 
 | Piece | Runs as | Port | Log |

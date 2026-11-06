@@ -2,8 +2,10 @@ import Fastify, { type FastifyRequest, type FastifyReply, type FastifyInstance }
 import { request as httpsRequest, type RequestOptions } from 'node:https';
 import { readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
+import { createSecureContext } from 'node:tls';
 import { decrypt, encrypt } from './gateway/crypto.ts';
-import { config } from './config.ts';
+import { config, publicTlsConfig } from './config.ts';
+import { logCaFingerprint, registerCaBootstrap } from './caBootstrap.ts';
 import { dispatchRpc } from './services/router.ts';
 import { GRPC_STATUS, ERROR_CODE, ERROR_ACTION, NOT_IMPLEMENTED_MESSAGE, encodeBinHeader, encodeGrpcMessage, isAppRpcError, isNotImplementedError, isUnauthenticatedError } from './services/errors.ts';
 import { publicKeyFingerprint } from './auth/jwt.ts';
@@ -13,6 +15,7 @@ import { registerFirebaseStorage } from './firebaseStorage.ts';
 import { registerInviteRoutes } from './routes/invites.ts';
 import { MASTER_BLOBS_DIR } from './services/master.ts';
 import { isSandbox } from './profile.ts';
+import { isMainModule } from './mainModule.ts';
 import { titleVariantBlobPath } from './profiles/sandbox/titleBackground.ts';
 import './services/all.ts';
 import '@sumire-sr/protocol/gen/registry.ts';
@@ -256,6 +259,33 @@ async function handler(req: FastifyRequest, reply: FastifyReply) {
     .send(out);
 }
 
+/**
+ * Build the SNI callback that serves the public (Let's Encrypt) certificate
+ * for exactly one hostname; every other servername falls back to the default
+ * private-CA leaf. Exported so the hostname match can be unit-tested without a
+ * listener.
+ */
+export function buildSniCallback(publicTls: { hostname: string; certPath: string; keyPath: string }) {
+  let publicContext: ReturnType<typeof createSecureContext>;
+  try {
+    publicContext = createSecureContext({
+      cert: readFileSync(publicTls.certPath),
+      key: readFileSync(publicTls.keyPath),
+    });
+  } catch (e: unknown) {
+    const reason = e instanceof Error ? e.message : String(e);
+    throw new Error(
+      `failed to load TLS public certificate: TLS_PUBLIC_CERT (${publicTls.certPath}) / ` +
+        `TLS_PUBLIC_KEY (${publicTls.keyPath}) for TLS_PUBLIC_HOSTNAME (${publicTls.hostname}): ${reason}`,
+    );
+  }
+  const publicHostname = publicTls.hostname.toLowerCase();
+  return (servername: string, cb: (err: Error | null, ctx?: unknown) => void) => {
+    if (servername?.toLowerCase() === publicHostname) cb(null, publicContext);
+    else cb(null, undefined); // falsy ctx → Node falls back to the default context
+  };
+}
+
 export function buildServer(): FastifyInstance {
   const opts: Record<string, unknown> = {
     logger: {
@@ -271,7 +301,17 @@ export function buildServer(): FastifyInstance {
     requestTimeout: 60_000,
   };
   if (config.http2) opts.http2 = true;
-  if (config.tls) opts.https = ensureTlsCert();
+  if (config.tls) {
+    const tlsOpts: Record<string, unknown> = ensureTlsCert();
+    // Optional public certificate for one SNI name (a real domain with a
+    // Let's Encrypt cert). Any other servername — including the game's
+    // hostnames — keeps the default private-CA leaf context.
+    const publicTls = publicTlsConfig();
+    if (publicTls) {
+      tlsOpts.SNICallback = buildSniCallback(publicTls);
+    }
+    opts.https = tlsOpts;
+  }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const app = Fastify(opts as any) as unknown as FastifyInstance;
@@ -311,6 +351,10 @@ export function buildServer(): FastifyInstance {
   tlsSrv.on('secureConnection', (s: any) => onSecure(s));
   tlsSrv.on('session', (s: any) => onSecure(s, s?.alpnProtocol));
 
+  // Bootstrap endpoints must precede the Firebase emulation and the gRPC
+  // catch-alls so no auth/decryption handler can intercept them. Static routes
+  // win in Fastify's router regardless, but registration order documents it.
+  registerCaBootstrap(app);
   // Firebase Auth REST emulation must be registered before the parametric
   // gRPC fallback; static routes win anyway, but this keeps `/v1/token`
   // unambiguous and documents the intent.
@@ -350,6 +394,7 @@ export function start() {
   // visible in the server log next to "Server listening".
   publicKeyFingerprint();
   const app = buildServer();
+  logCaFingerprint(app.log);
   app
     .listen({ port: config.port, host: config.host })
     .then((addr) => console.log(`fastify-api listening on ${addr}`))
@@ -359,4 +404,4 @@ export function start() {
     });
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) start();
+if (isMainModule(import.meta.url, process.argv[1])) start();

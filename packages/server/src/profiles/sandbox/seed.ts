@@ -1116,14 +1116,20 @@ async function seedAccountProgress(
   if (pointWrites.length) await putElements(playerId, 'Points', pointWrites, exec);
 
   // Items: base consumables + every gacha ticket, topped up to the ceiling.
+  // Love key items (Type 9001-9003) are event-only categories, so they are
+  // matched by id instead of SANDBOX_ITEM_TYPES; this keeps MoshiKoi episodes
+  // readable for free in the sandbox.
   const itemRows = await exec
     .select({ Id: master.masterItem.Id, Type: master.masterItem.Type })
     .from(master.masterItem);
   const itemIds = new Set<string>();
   for (const row of itemRows) {
-    if (!SANDBOX_ITEM_TYPES.has(Number(row.Type ?? 0))) continue;
     const id = String(row.Id ?? '');
     if (!id || INVALID_ITEM_IDS.has(id)) continue;
+    const isLoveKey =
+      id.startsWith('item-love-') &&
+      (id.endsWith('-story') || id.endsWith('-present') || id.endsWith('-lesson-boost'));
+    if (!SANDBOX_ITEM_TYPES.has(Number(row.Type ?? 0)) && !isLoveKey) continue;
     if (!isClientResolvable('Items', id)) continue;
     itemIds.add(id);
   }

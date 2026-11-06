@@ -199,8 +199,8 @@ export const playerEntities = pgTable(
 );
 
 /**
- * One server-side もし恋 save slot (matches proto `LoveSaveDataInfo`:
- * slotNumber / saveTime / latestStoryEpisodeId / name).
+ * One server-side もし恋 save slot: the proto `LoveSaveDataInfo` fields plus the
+ * captured route (solis `umodel.UserLoveSave.StoryEpisodeIDs` / `Selections`).
  */
 /** Campaign effect carried by `LessonInfo.CampaignEffects`. */
 export type ActivityCampaignEffect = {
@@ -243,6 +243,20 @@ export type LoveSaveSlot = {
   saveTime: number;
   latestStoryEpisodeId: string;
   name: string;
+  /** Route captured when the slot was written (solis `UserLoveSave.StoryEpisodeIDs`). */
+  storyEpisodeIds: string[];
+  /** Choices captured when the slot was written (solis `UserLoveSave.Selections`). */
+  selections: LoveStorySelection[];
+};
+
+/** One saved route choice (solis `umodel.LoveStorySelection`). */
+export type LoveStorySelection = {
+  /** Episode the choice belongs to. */
+  storyEpisodeId: string;
+  /** 1-based choice group index from the route data. */
+  groupIndex: number;
+  /** 1-based choice index from the route data. */
+  index: number;
 };
 
 /**
@@ -262,6 +276,14 @@ export const playerLoveProgress = pgTable(
     exp: bigint('exp', { mode: 'number' }).default(0).notNull(),
     lastReceiveTime: bigint('last_receive_time', { mode: 'number' }).default(0).notNull(),
     readEpisodeIds: jsonb('read_episode_ids').$type<string[]>().default([]).notNull(),
+    /** Episodes on the player's current route, in play order (solis StoryEpisodeIDs). */
+    storyEpisodeIds: jsonb('story_episode_ids').$type<string[]>().default([]).notNull(),
+    /** Choices made on the current route (solis Selections). */
+    selections: jsonb('selections').$type<LoveStorySelection[]>().default([]).notNull(),
+    /** Every choice ever made, kept for hints/history (solis PastSelections). */
+    pastSelections: jsonb('past_selections').$type<LoveStorySelection[]>().default([]).notNull(),
+    /** Episode currently being read; '' when not reading (solis ActiveStoryEpisodeID). */
+    activeStoryEpisodeId: text('active_story_episode_id').default('').notNull(),
     saveSlots: jsonb('save_slots').$type<LoveSaveSlot[]>().default([]).notNull(),
     saveUnlocked: boolean('save_unlocked').default(false).notNull(),
     lastPlayTime: bigint('last_play_time', { mode: 'number' }).default(0).notNull(),
