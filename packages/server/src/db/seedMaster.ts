@@ -96,6 +96,11 @@ import {
   masterBoxGachaGroup,
   masterMarathonBoxGachaSetting,
   masterHomeTalk,
+  masterArea,
+  masterCondition,
+  masterManagerLevel,
+  masterMusic,
+  masterHierarchyDetailGrade,
 } from './masterSchema.ts';
 
 const STRUCTURED_DIR =
@@ -191,6 +196,11 @@ const MASTER_TABLES = {
   BoxGachaGroup: masterBoxGachaGroup,
   MarathonBoxGachaSetting: masterMarathonBoxGachaSetting,
   HomeTalk: masterHomeTalk,
+  Area: masterArea,
+  Condition: masterCondition,
+  ManagerLevel: masterManagerLevel,
+  Music: masterMusic,
+  HierarchyDetailGrade: masterHierarchyDetailGrade,
 } as const;
 
 type MasterType = keyof typeof MASTER_TABLES;

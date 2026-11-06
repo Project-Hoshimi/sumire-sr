@@ -6,6 +6,8 @@ import { DATA_DIR, config } from '../config.ts';
 export type DataRequirements = {
   /** Require `$SUMIRE_DATA_DIR/captures` (default: true). */
   captures?: boolean;
+  /** Require recorded requests too; the published data ships responses only. */
+  requestCaptures?: boolean;
   /** Require a reachable PostgreSQL listener at `DATABASE_URL` (default: false). */
   db?: boolean;
 };
@@ -50,6 +52,10 @@ export async function requireData(opts: DataRequirements = {}): Promise<void> {
   if (opts.captures !== false) {
     const captures = join(DATA_DIR, 'captures');
     if (!existsSync(captures)) skip(`no captures at ${captures}`);
+  }
+  if (opts.requestCaptures) {
+    const request = join(DATA_DIR, 'captures', '2026-09-14_a12r', 'raw', '00002.req-plain.Auth:Login.bin');
+    if (!existsSync(request)) skip(`needs recorded requests, not in the published data: ${request}`);
   }
   if (opts.db) {
     if (!(await tcpReachable(config.databaseUrl))) {

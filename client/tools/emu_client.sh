@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
-# emu_client.sh — put the LSPatch local-mode HoshimiLocalify-sr client on the
+# emu_client.sh — put the LSPatch local-mode HoshimiLocalify-sr (tokanada fork) client on the
 # emulator (the rootless, Moto G-style path; no frida). See docs/EMULATOR_RUNBOOK.md.
 #
 # Usage:
 #   bash tools/emu_client.sh install   # manager + patched game + mod, seed assets, write config
 #   bash tools/emu_client.sh fresh     # wipe game data (new account on next start), re-seed assets
+#   bash tools/emu_client.sh config     # write mod config (server picker)
 #   bash tools/emu_client.sh start     # launch the game from the mod app (passes the config)
 #
 # After `install`, enable the mod once in the LSPatch manager:
@@ -21,7 +22,7 @@ REPO="$(cd "$(dirname "$0")/.." && pwd)"
 SERIAL="${EMU_SERIAL:-emulator-5580}"
 ADB="${ANDROID_SDK_ROOT:?set ANDROID_SDK_ROOT}/platform-tools/adb"
 PKG=game.qualiarts.idolypride
-MOD=io.github.cylear.hoshimi.localify
+MOD="${MOD:-io.github.tokanada.hoshimi.localify}"
 LSPATCH_DIR="${LSPATCH_DIR:-$REPO/tools/emulator/lspatch-492}"
 MOD_APK="${MOD_APK:-$REPO/../HoshimiLocalify-sr/app/build/outputs/apk/full/debug/app-full-debug.apk}"
 CACHE_DIR="${CACHE_DIR:-$REPO/tools/emulator/pixel-6.0.3}"
@@ -66,11 +67,12 @@ write_config() {
     adbs shell am force-stop "$MOD"
     adbs shell run-as "$MOD" cat files/ipr-config.json >"$tmp/cur.json" 2>/dev/null || die "cannot read $MOD config (debug build needed for run-as)"
   fi
+  # Leave the server choice to the in-game Switch server picker: privateServerEnabled=true makes the mod app-managed and the button refuses to switch.
   python3 -I - "$tmp/cur.json" "$tmp/new.json" "$SERVER_URL" "$CA_PEM" <<'EOF'
 import json, sys
 cur, new, url, ca = sys.argv[1:5]
 c = json.load(open(cur))
-c.update(enabled=True, privateServerEnabled=True, privateServerUrl=url, privateServerCaPem=open(ca).read())
+c.update(enabled=True, privateServerEnabled=False, privateServerUrl="", privateServerCaPem="")
 json.dump(c, open(new, 'w'), separators=(',', ':'))
 EOF
   adbs exec-in run-as "$MOD" sh -c 'cat > files/ipr-config.json' <"$tmp/new.json" || die "config write failed"
@@ -110,6 +112,9 @@ case "${1:-}" in
     adbs root >/dev/null 2>&1
     adbs shell rm -rf "/data/media/0/Android/data/$PKG"
     seed_assets
+    ;;
+  config)
+    write_config
     ;;
   start)
     reverse

@@ -122,12 +122,12 @@ async function seedCorpusPlayer(): Promise<void> {
     id: CORPUS_ACCOUNT_ID,
     firebaseUid: CORPUS_UID,
     seedId: CORPUS_PUBLIC_ID,
-    displayName: 'genesis',
+    displayName: 'Player',
   });
   await db.insert(players).values({
     id: CORPUS_PLAYER_ID,
     accountId: CORPUS_ACCOUNT_ID,
-    name: 'genesis',
+    name: 'Player',
     level: 40,
     exp: 1335246,
     gold: 1707717,
@@ -210,6 +210,15 @@ if (await dbReachable()) {
       'Home:Login keeps ManagerLevel 1',
       Number(homeLogin.CommonResponse?.UpdatedData?.User?.ManagerLevel) === 1,
       homeLogin.CommonResponse?.UpdatedData?.User?.ManagerLevel,
+    );
+
+    // The Love menu is gated on Home:Enter's LoveInfo; it stays hidden while
+    // the tutorial is in progress.
+    const homeDuringTutorial = await call('Home:Enter', { SkipUpdate: false }, token);
+    check(
+      'fresh Home:Enter during the tutorial does not inject LoveInfo',
+      !Number(homeDuringTutorial.LoveInfo?.IsUnlocked),
+      homeDuringTutorial.LoveInfo,
     );
 
     // --- Tutorial:Progress echoes each step -------------------------------
@@ -336,9 +345,12 @@ if (await dbReachable()) {
 
     const home = await call('Home:Enter', { SkipUpdate: false }, token);
     check('fresh Home:Enter returns a body', !!home.LessonProgress, home);
-    // The official bytes, untouched: the Love unlock crashed the client's home
-    // screen for a fresh account (NullReferenceException in HomeEnterAsync).
-    check('fresh Home:Enter does not inject LoveInfo', !Number(home.LoveInfo?.IsUnlocked), home.LoveInfo);
+    // Once the tutorial is cleared the server-gated Love menu must be visible.
+    check(
+      'fresh Home:Enter after the tutorial injects an unlocked LoveInfo',
+      Number(home.LoveInfo?.IsViewable) === 1 && Number(home.LoveInfo?.IsUnlocked) === 1,
+      home.LoveInfo,
+    );
     const gachaIds = ((home.GachaInfos ?? []) as { GachaId?: string }[]).map((g) => String(g.GachaId));
     check(
       'fresh Home:Enter keeps the corpus GachaInfos (no ids missing from our master)',

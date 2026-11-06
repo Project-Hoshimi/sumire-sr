@@ -56,3 +56,57 @@ jobs:
 
       - name: Scan history
         run: gitleaks git --redact --no-banner -v .
+
+  fresh-boot:
+    name: Fresh boot (no game data)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: idoly
+          POSTGRES_PASSWORD: idoly_dev_pw
+          POSTGRES_DB: idoly
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U idoly -d idoly"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      WIRE_SEC_KEY: dummy-ci-key
+      SUMIRE_PROFILE: sandbox
+      DATABASE_URL: postgres://idoly:idoly_dev_pw@localhost:5432/idoly
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+
+      - run: npm ci
+
+      - name: No game data in tree
+        run: |
+          if [ -e packages/server/src/data/diaries.json ]; then
+            echo "unexpected diary catalog in the export" >&2
+            exit 1
+          fi
+          if [ -d captures ]; then
+            echo "unexpected captures directory at the repo root" >&2
+            exit 1
+          fi
+
+      - name: Migrate
+        run: npm run -w packages/server db:migrate
+
+      - name: Migrate again (idempotent)
+        run: npm run -w packages/server db:migrate
+
+      - name: Smoke fresh boot
+        run: npm run -w packages/server smoke:fresh-boot

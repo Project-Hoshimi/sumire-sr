@@ -1,4 +1,4 @@
-import 'dotenv/config';
+import './env.ts';
 import * as C from './gateway/crypto.ts';
 import { createHash } from 'node:crypto';
 

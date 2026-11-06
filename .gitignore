@@ -12,7 +12,7 @@ phaseA2/
 *.db
 *.dump
 backups/
-data/
+/data/
 
 .DS_Store
 .worktrees/

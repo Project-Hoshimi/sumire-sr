@@ -163,7 +163,8 @@ register('Home:Enter', async (ctx) => {
     // The fresh capture references October gachas/banners/events that our
     // (September) master lacks, which crashes the client (GachaInfo lookup in
     // UserDataManager.SetCustomData). So keep the corpus body, take only the
-    // account-progress fields from the fresh capture, and skip the Love unlock.
+    // account-progress fields from the fresh capture, and skip the Love unlock
+    // only while the tutorial is still in progress.
     const corpus = getCorpusResponse('Home:Enter');
     const fresh = getFreshCapture(file);
     if (corpus && fresh) {
@@ -173,6 +174,7 @@ register('Home:Enter', async (ctx) => {
         if (freshBody[k] === undefined) delete body[k];
         else body[k] = freshBody[k];
       }
+      if (user?.TutorialClearedTime != null) body.LoveInfo = unlockedLoveInfo();
       if (activity) {
         body.LessonProgress = activity.LessonProgress;
         body.LessonInfo = activity.LessonInfo;

@@ -20,21 +20,24 @@ import { getSingleton, listElements, putElements, putSingleton } from './service
 import { getItemAmount, grantItem as grantPromotionItem } from './services/inventory.ts';
 import { getActivityPerformance, getCostume, getHair, getHierarchyDetailGrade } from './master/index.ts';
 import { requireData } from './testing/requireData.ts';
+import { loadPinnedIdentity } from './services/identity.ts';
 
-await requireData({ captures: true, db: true });
+await requireData({ captures: true, requestCaptures: true, db: true });
 
-const CAPTURED_UID = '2eab1baa-7e88-4397-bb0e-66ac9f6a1f76';
+// The account the captures were recorded with: the real one privately, the
+// placeholder in the published data.
+const CAPTURED_UID = loadPinnedIdentity()?.firebaseUid;
 const CAP = join(DATA_DIR, 'captures', '2026-09-14_a12r', 'raw');
 
 // Dedicated test account. The suite must NEVER act as the real device account,
 // otherwise its deterministic wipe + gacha draws consume the player's one-time
 // buttons and replay feature tutorials. The test account is seeded with the same
-// corpus stats (genesis / Lv40) so the M1 assertions stay meaningful.
+// corpus stats (Lv40) so the M1 assertions stay meaningful.
 const TEST_ACCOUNT_ID = 'dbtest-account-0000-4000-8000-000000000001';
 const TEST_UID = 'dbtest-firebase-uid-0001';
 const SERVER_USER_ID = 'dbtest-user-0000-4000-8000-000000000001';
 const TEST_PUBLIC_USER_ID = 'DBTEST01';
-const TEST_SEED = { name: 'genesis', level: 40, exp: 1335246, gold: 1707717, freeJewel: 10670 };
+const TEST_SEED = { name: 'Player', level: 40, exp: 1335246, gold: 1707717, freeJewel: 10670 };
 
 let pass = 0;
 let fail = 0;
@@ -145,7 +148,7 @@ const userGet = async () => {
 const u = await userGet();
 check('User:Get UserPublic.ServerUserId from DB', u.UserPublic?.ServerUserId === SERVER_USER_ID);
 check('User:Get UserPublic.PublicUserId from DB', u.UserPublic?.PublicUserId === TEST_PUBLIC_USER_ID);
-check('User:Get User.Name from DB', u.User?.Name === 'genesis');
+check('User:Get User.Name from DB', u.User?.Name === 'Player');
 check('User:Get User.ManagerLevel from DB', u.User?.ManagerLevel === 40);
 check('User:Get Items intact', u.Items?.length === 29);
 check('User:Get Cards intact', u.Cards?.length === 19);
@@ -535,6 +538,10 @@ check('Love:Save/UpdateSaveName are accepted', true);
 const loveExtra = await loveRpc('TitleExtra', { LoveId: LOVE_ID });
 check('Love:TitleExtra returns the requested LoveInfo', loveExtra.LoveInfo?.LoveId === LOVE_ID);
 check('Love:TitleExtra LoveInfo carries endings', (loveExtra.LoveInfo?.StoryEndInfos?.length ?? 0) === 10);
+check(
+  'Love:TitleExtra returns the extra story title asset',
+  loveExtra.TitleAssetId === 'love-25-0426',
+);
 
 // --- Activity:ReceiveLessonReward (native lesson idle rewards) ---
 const activityAuth = {
@@ -1722,7 +1729,7 @@ check('Profile:UpdateName returns UpdatedData.User', nameResp.CommonResponse?.Up
 const afterName = await userGet();
 check('Profile:UpdateName persisted to the player row via User:Get', afterName.User?.Name === newName);
 // Restore the captured name so the suite stays idempotent across runs.
-await updateProfile('Profile:UpdateName', { Name: 'genesis' });
+await updateProfile('Profile:UpdateName', { Name: 'Player' });
 
 let decoThrew = false;
 try {

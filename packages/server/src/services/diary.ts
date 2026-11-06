@@ -1,4 +1,7 @@
 import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { DATA_DIR } from '../config.ts';
 import { register } from './handlers.ts';
 import type { Decoded } from '@sumire-sr/protocol/runtime/proto.ts';
 
@@ -12,10 +15,33 @@ type DiaryEntry = { id: string; year: number; month: number; day: number; assetI
 /**
  * Mana's diary pages. The client has no master table for them: the catalog
  * (id, date, asset id) comes from solis-server's diaries.yaml (AGPL-3.0).
+ *
+ * The catalog is private game data and is not part of the public export, so a
+ * missing file must not block boot: `Diary:GetInfos` then simply lists nothing.
+ * Resolution order is the checkout-relative path (private tree) and then the
+ * data dir (`SUMIRE_DATA_DIR`); malformed JSON is still a hard error.
  */
-const DIARIES: DiaryEntry[] = JSON.parse(
-  readFileSync(new URL('../data/diaries.json', import.meta.url), 'utf8'),
-);
+export function loadDiaries(explicitPath?: string): DiaryEntry[] {
+  const candidates = explicitPath
+    ? [explicitPath]
+    : [
+        fileURLToPath(new URL('../data/diaries.json', import.meta.url)),
+        join(DATA_DIR, 'diaries.json'),
+      ];
+  for (const candidate of candidates) {
+    try {
+      return JSON.parse(readFileSync(candidate, 'utf8')) as DiaryEntry[];
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code !== 'ENOENT') throw e;
+    }
+  }
+  console.warn(
+    `Diary catalog not found (looked for ${candidates.join(', ')}); Diary:GetInfos will return an empty list. Expected path: ${candidates[0]}`,
+  );
+  return [];
+}
+
+const DIARIES: DiaryEntry[] = loadDiaries();
 const DIARY_IDS = new Set(DIARIES.map((d) => d.id));
 
 function commonResponse(): Decoded {
