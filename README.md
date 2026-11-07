@@ -73,6 +73,25 @@ On an empty database with no game data the server boots and sandbox `Auth:Create
 
 Never commit real account tokens, captures, or personal data into this repository.
 
+### Invite links
+
+`SUMIRE_REGISTRATION` sets who may get an account: `open` (default) lets new players sign in without a link, `invite` requires an invite link, and `closed` refuses invite pages with 403.
+
+Admin routes need `Authorization: Bearer $SUMIRE_ADMIN_TOKEN`. With no token configured, or a wrong one, they answer 404. To create a link:
+
+```sh
+curl -s -X POST https://sumire.example/sumire/admin/invites \
+  -H "Authorization: Bearer $SUMIRE_ADMIN_TOKEN" \
+  -H 'content-type: application/json' \
+  -d '{"uses":1,"expiresDays":7,"note":"for a friend"}'
+```
+
+Body fields are optional: `uses` (integer 1-1000, default 1), `expiresDays` (greater than 0, up to 3650; omitted means no expiry), and `note` (string). The response is JSON with `id` and `url`. The URL uses `SUMIRE_PUBLIC_URL` when set, otherwise `https://` plus the request's host.
+
+The player opens the URL in a browser and chooses a link password of 8-16 letters and digits. The page shows a title ID. In the game, they go to the title screen, then Account, then Enter Link Password, and enter the title ID and password.
+
+List invites with `GET /sumire/admin/invites`, and revoke one with `POST /sumire/admin/invites/<id>/revoke`, using the same header. Treat an invite URL like a password until it is used or expires.
+
 ## Documentation
 
 - [AGENTS.md](AGENTS.md) — canonical guide for contributors and LLM coding agents: layout, request flow, endpoint workflow, hard rules.

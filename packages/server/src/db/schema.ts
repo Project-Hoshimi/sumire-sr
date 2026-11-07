@@ -466,4 +466,21 @@ export const playerExcursionState = pgTable('player_excursion_state', {
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 });
 
+/**
+ * Per-player birthday event state for one JST event year: the three chosen
+ * participants, which birthday adventures were watched/claimed, and the
+ * reminder year the player already dismissed.
+ */
+export const playerBirthdayState = pgTable('player_birthday_state', {
+  playerId: text('player_id')
+    .primaryKey()
+    .references(() => players.id),
+  eventYear: integer('event_year').default(0).notNull(),
+  birthdayIds: jsonb('birthday_ids').$type<string[]>().default([]).notNull(),
+  watchedIds: jsonb('watched_ids').$type<string[]>().default([]).notNull(),
+  claimedIds: jsonb('claimed_ids').$type<string[]>().default([]).notNull(),
+  remindedYear: integer('reminded_year').default(0).notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
 export * from './masterSchema.ts';

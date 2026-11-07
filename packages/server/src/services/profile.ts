@@ -7,6 +7,8 @@ import { getSingleton, listElements, putSingleton } from './playerState.ts';
 import { getLowestHierarchyDetailGrade } from '../master/index.ts';
 import { type Decoded } from '@sumire-sr/protocol/runtime/proto.ts';
 import { isSandbox } from '../profile.ts';
+import { birthdayBadRequest, loadReconciledBirthday } from './birthday.ts';
+import { birthdayClock, isValidBirthDate, nextAdv, reminder } from './birthdayLogic.ts';
 import { SANDBOX_HIERARCHY_DETAIL_GRADE_ID, SANDBOX_HIERARCHY_RANK } from '../profiles/sandbox/hierarchy.ts';
 
 /**
@@ -239,16 +241,31 @@ register(
 
 register(
   'Profile:UpdateBirthday',
-  (ctx) => {
+  async (ctx) => {
     const accountId = accountOf(ctx);
-    const month = ctx.request?.Month != null ? Number(ctx.request.Month) : undefined;
-    const day = ctx.request?.Day != null ? Number(ctx.request.Day) : undefined;
-    return runProfile(accountId, 'Profile:UpdateBirthday', async (tx, playerId) => {
-      const profile = await loadProfile(tx, playerId);
-      if (month !== undefined) profile.BirthMonth = month;
-      if (day !== undefined) profile.BirthDay = day;
-      await putSingleton(playerId, 'Profile', profile, tx);
-      return updatedData(['Profile', profile]);
+    const month = ctx.request?.Month != null ? Number(ctx.request.Month) : 0;
+    const day = ctx.request?.Day != null ? Number(ctx.request.Day) : 0;
+    const pl = await playerForAccount(accountId, 'Profile:UpdateBirthday');
+    return withPlayerTx(pl.id, async (tx) => {
+      if (!isValidBirthDate(month, day)) birthdayBadRequest('invalid birth date');
+      const profile = await loadProfile(tx, pl.id);
+      if (Number(profile.BirthMonth ?? 0) !== 0 || Number(profile.BirthDay ?? 0) !== 0) {
+        birthdayBadRequest('birthday has already been set');
+      }
+      profile.BirthMonth = month;
+      profile.BirthDay = day;
+      await putSingleton(pl.id, 'Profile', profile, tx);
+
+      const now = birthdayClock();
+      const { state, month: m, day: d } = await loadReconciledBirthday(pl.id, tx, now);
+      const adv = nextAdv(state, m, d, now);
+      const remind = reminder(state, m, d, now);
+      return {
+        __msg: '',
+        ...(adv ? { BirthdayAdvInfo: adv } : {}),
+        ...(remind ? { BirthdayRemindInfo: remind } : {}),
+        CommonResponse: commonResponse(updatedData(['Profile', profile])),
+      } as Decoded;
     });
   },
   { ownsState: true },

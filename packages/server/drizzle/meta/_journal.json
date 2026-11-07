@@ -232,6 +232,13 @@
       "when": 1794000000100,
       "tag": "0034_fresh_db_master_tables",
       "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1794000000200,
+      "tag": "0035_player_birthday_state",
+      "breakpoints": true
     }
   ]
 }

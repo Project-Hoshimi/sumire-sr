@@ -15,6 +15,7 @@ import {
   replaceElements,
 } from './playerState.ts';
 import { register } from './handlers.ts';
+import { applyBirthdayToHomeEnter, applyBirthdayToHomeLogin, birthdayLoginFields } from './birthday.ts';
 import { withPlayerTx } from '../db/tx.ts';
 import { hasReceivableGift } from './gift.ts';
 import { accountOf, commonResponse, lessonHomeFields, playerForAccount, reconcileLessonState } from './activity.ts';
@@ -184,6 +185,7 @@ register('Home:Enter', async (ctx) => {
       await applySandboxEvents(body);
       applySandboxHomeButtons(body);
       await dropSandboxToyGachas(body);
+      if (pl) await applyBirthdayToHomeEnter(body, pl.id);
       const w = new Writer();
       encodeMessage(HomeEnterResponse, body, w);
       return Buffer.from(w.toBytes());
@@ -195,17 +197,15 @@ register('Home:Enter', async (ctx) => {
 
   const loveInfo = unlockedLoveInfo();
   if (!captured) {
+    const body: Decoded = {
+      __msg: HomeEnterResponse.name,
+      ...(activity ?? {}),
+      ...(receivableGift === null ? {} : { HasReceivableGift: receivableGift }),
+      LoveInfo: loveInfo,
+    };
+    if (pl) await applyBirthdayToHomeEnter(body, pl.id);
     const w = new Writer();
-    encodeMessage(
-      HomeEnterResponse,
-      {
-        __msg: HomeEnterResponse.name,
-        ...(activity ?? {}),
-        ...(receivableGift === null ? {} : { HasReceivableGift: receivableGift }),
-        LoveInfo: loveInfo,
-      },
-      w,
-    );
+    encodeMessage(HomeEnterResponse, body, w);
     return Buffer.from(w.toBytes());
   }
   const decoded = decodeMessage(HomeEnterResponse, new Reader(Uint8Array.from(captured)));
@@ -219,6 +219,7 @@ register('Home:Enter', async (ctx) => {
   await applySandboxEvents(decoded);
   applySandboxHomeButtons(decoded);
   await dropSandboxToyGachas(decoded);
+  if (pl) await applyBirthdayToHomeEnter(decoded, pl.id);
   const w = new Writer();
   encodeMessage(HomeEnterResponse, decoded, w);
   return Buffer.from(w.toBytes());
@@ -246,8 +247,21 @@ register('Home:Login', async (ctx) => {
   if (!captured) {
     const corpus = getCorpusResponse('Home:Login');
     if (!corpus) throw new Error('corpus has no response for Home:Login');
-    if (!isSandbox()) return corpus;
+    const fields = pl ? await birthdayLoginFields(pl.id) : null;
+    if (!isSandbox()) {
+      if (!pl) return corpus;
+      const decoded = decodeMessage(HomeLoginResponse, new Reader(Uint8Array.from(corpus)));
+      const hasValue = fields!.adv !== undefined || fields!.remind !== undefined;
+      const hasCorpusField =
+        decoded.BirthdayAdvInfo !== undefined || decoded.BirthdayRemindInfo !== undefined;
+      if (!hasValue && !hasCorpusField) return corpus;
+      await applyBirthdayToHomeLogin(decoded, pl.id, fields!);
+      const w = new Writer();
+      encodeMessage(HomeLoginResponse, decoded, w);
+      return Buffer.from(w.toBytes());
+    }
     const decoded = decodeMessage(HomeLoginResponse, new Reader(Uint8Array.from(corpus)));
+    if (pl && fields) await applyBirthdayToHomeLogin(decoded, pl.id, fields);
     dropSandboxLoginMissions(decoded);
     const w = new Writer();
     encodeMessage(HomeLoginResponse, decoded, w);
@@ -257,6 +271,7 @@ register('Home:Login', async (ctx) => {
   const decoded = decodeMessage(HomeLoginResponse, new Reader(Uint8Array.from(captured)));
   const user = await getSingleton(pl!.id, 'User');
   if (user) decoded.CommonResponse.UpdatedData.User = user;
+  if (pl) await applyBirthdayToHomeLogin(decoded, pl.id);
   dropSandboxLoginMissions(decoded);
   const w = new Writer();
   encodeMessage(HomeLoginResponse, decoded, w);
