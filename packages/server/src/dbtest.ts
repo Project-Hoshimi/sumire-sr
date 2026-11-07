@@ -10,7 +10,7 @@ import { endpoints } from '@sumire-sr/protocol/gen/endpoints.ts';
 import '@sumire-sr/protocol/gen/registry.ts';
 import { verifyToken } from './auth/jwt.ts';
 import { db } from './db/client.ts';
-import { accounts, players, playerEntities, playerExcursionState, rewardClaims, playerLedger, playerPurchases, playerLoveProgress, playerLessonProgress, playerGachaState, gachaHistory, idolRoster, ownedCards, deckConfigurations, liveStageProgress, playerBoxGacha, playerMarathonPoint, photoImageMetadata } from './db/schema.ts';
+import { accounts, players, playerEntities, playerExcursionState, playerBirthdayState, rewardClaims, playerLedger, playerPurchases, playerLoveProgress, playerLessonProgress, playerGachaState, gachaHistory, idolRoster, ownedCards, deckConfigurations, liveStageProgress, playerBoxGacha, playerMarathonPoint, photoImageMetadata } from './db/schema.ts';
 import { parseFirebaseUid } from './services/auth.ts';
 import { applyRewardRefs } from './master/reward.ts';
 import { mintIdToken } from './auth/firebaseTokens.ts';
@@ -55,6 +55,7 @@ await import('./services/all.ts');
 // left completely untouched.
 await db.delete(playerEntities).where(eq(playerEntities.playerId, SERVER_USER_ID));
 await db.delete(playerExcursionState).where(eq(playerExcursionState.playerId, SERVER_USER_ID));
+await db.delete(playerBirthdayState).where(eq(playerBirthdayState.playerId, SERVER_USER_ID));
 await db.delete(rewardClaims).where(eq(rewardClaims.playerId, SERVER_USER_ID));
 await db.delete(playerLedger).where(eq(playerLedger.playerId, SERVER_USER_ID));
 await db.delete(playerPurchases).where(eq(playerPurchases.playerId, SERVER_USER_ID));

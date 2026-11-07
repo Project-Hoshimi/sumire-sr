@@ -46,11 +46,11 @@ Do not edit by hand.
 | Backside | StageStart | missing |
 | Backside | StageSurpriseFinish | missing |
 | Backside | Top | missing |
-| Birthday | OutputWatchedLog | missing |
-| Birthday | ReceiveReward | missing |
-| Birthday | SetWatched | missing |
-| Birthday | SetWatchedRemindInfo | missing |
-| Birthday | Top | missing |
+| Birthday | OutputWatchedLog | implemented |
+| Birthday | ReceiveReward | implemented |
+| Birthday | SetWatched | implemented |
+| Birthday | SetWatchedRemindInfo | implemented |
+| Birthday | Top | implemented |
 | Card | ActivityAbilityEnhance | implemented |
 | Card | Enhance | implemented |
 | Card | LimitBreak | implemented |
@@ -435,4 +435,4 @@ Do not edit by hand.
 | User | ProvideExternalReward | missing |
 | Warning | SetDisplayed | missing |
 
-**Totals:** 425 endpoints — 192 implemented, 233 missing.
+**Totals:** 425 endpoints — 197 implemented, 228 missing.

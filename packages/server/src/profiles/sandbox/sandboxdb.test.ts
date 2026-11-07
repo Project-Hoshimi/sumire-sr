@@ -27,6 +27,7 @@ import {
   playerBoxGacha,
   playerMarathonPoint,
   playerExcursionState,
+  playerBirthdayState,
 } from '../../db/schema.ts';
 import { decodeMessage, encodeMessage, msgRegistry, Reader, Writer } from '@sumire-sr/protocol/runtime/proto.ts';
 import { endpoints } from '@sumire-sr/protocol/gen/endpoints.ts';
@@ -77,6 +78,7 @@ async function removePlayer(accountId: string, serverUserId: string) {
   await db.delete(playerBoxGacha).where(eq(playerBoxGacha.playerId, serverUserId));
   await db.delete(playerMarathonPoint).where(eq(playerMarathonPoint.playerId, serverUserId));
   await db.delete(playerExcursionState).where(eq(playerExcursionState.playerId, serverUserId));
+  await db.delete(playerBirthdayState).where(eq(playerBirthdayState.playerId, serverUserId));
   await db.delete(players).where(eq(players.id, serverUserId));
   await db.delete(accounts).where(eq(accounts.id, accountId));
 }
