@@ -35,7 +35,7 @@ Levels are defined in [ROADMAP.md](../ROADMAP.md). `unrated` means a handler exi
 | Activity | UseRefreshItem | missing |
 | Advertisement | End | missing |
 | Advertisement | Start | missing |
-| Anniversary | OutputTransitionLog | missing |
+| Anniversary | OutputTransitionLog | stub |
 | Auth | Create | unrated |
 | Auth | Delete | missing |
 | Auth | Login | sandbox-ok |
@@ -80,7 +80,7 @@ Levels are defined in [ROADMAP.md](../ROADMAP.md). `unrated` means a handler exi
 | Costume | CheckCostume | unrated |
 | Costume | SetCostume | unrated |
 | Costume | SetLiveCostume | unrated |
-| Deck | BuddyList | missing |
+| Deck | BuddyList | stub |
 | Deck | Delete | missing |
 | Deck | Save | unrated |
 | Diary | GetInfos | unrated |
@@ -102,7 +102,7 @@ Levels are defined in [ROADMAP.md](../ROADMAP.md). `unrated` means a handler exi
 | Dice | UseStaminaRecoveryItem | missing |
 | Division | List | missing |
 | Division | Move | missing |
-| Dokan | List | missing |
+| Dokan | List | stub |
 | Dokan | OutputWatchedLog | unrated |
 | Dokan | SetWatched | unrated |
 | Dream | GenerateArea | unrated |
@@ -170,7 +170,7 @@ Levels are defined in [ROADMAP.md](../ROADMAP.md). `unrated` means a handler exi
 | Gvg | Start | missing |
 | Gvg | Top | missing |
 | Hair | CheckHair | unrated |
-| Health | Check | missing |
+| Health | Check | stub |
 | Hierarchy | ListRanking | missing |
 | Hierarchy | ReceiveDivisionRewards | missing |
 | Hierarchy | ReceiveRewards | missing |
@@ -179,7 +179,7 @@ Levels are defined in [ROADMAP.md](../ROADMAP.md). `unrated` means a handler exi
 | Home | Login | sandbox-ok |
 | Home | ReadTalk | unrated |
 | Home | SetCharacterPosition | unrated |
-| Home | SetReview | missing |
+| Home | SetReview | stub |
 | Invite | EnterCode | missing |
 | Invite | ReceiveHostRewards | missing |
 | Invite | Top | missing |
@@ -261,8 +261,8 @@ Levels are defined in [ROADMAP.md](../ROADMAP.md). `unrated` means a handler exi
 | Migration | RequestTwitterOAuthToken | missing |
 | Migration | SetPassword | unrated |
 | Migration | Unlink | missing |
-| Mission | Event | missing |
-| Mission | List | missing |
+| Mission | Event | stub |
+| Mission | List | stub |
 | Mission | Receive | unrated |
 | Mission | URLTransition | unrated |
 | Mosaic | Exchange | missing |
@@ -307,7 +307,7 @@ Levels are defined in [ROADMAP.md](../ROADMAP.md). `unrated` means a handler exi
 | PhotoPanorama | CheckShooting | unrated |
 | PhotoPanorama | CreateShootings | unrated |
 | PhotoPanorama | List | unrated |
-| Profile | ClearTwitterMission | missing |
+| Profile | ClearTwitterMission | stub |
 | Profile | FindUser | missing |
 | Profile | Top | unrated |
 | Profile | UpdateBackground | unrated |
@@ -436,6 +436,6 @@ Levels are defined in [ROADMAP.md](../ROADMAP.md). `unrated` means a handler exi
 | Tutorial | StartQuest | unrated |
 | User | Get | sandbox-ok |
 | User | ProvideExternalReward | missing |
-| Warning | SetDisplayed | missing |
+| Warning | SetDisplayed | stub |
 
-**Totals:** 425 endpoints — 0 parity, 6 sandbox-ok, 0 stub, 200 unrated, 219 missing.
+**Totals:** 425 endpoints — 0 parity, 6 sandbox-ok, 9 stub, 200 unrated, 210 missing.

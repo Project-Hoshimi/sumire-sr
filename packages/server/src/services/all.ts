@@ -31,6 +31,7 @@ import './activityPromotion.ts';
 import './quest.ts';
 import './birthday.ts';
 import './replay/index.ts';
+import './ackStubs.ts';
 import { registerReplayHandlers } from './replay/index.ts';
 
 registerReplayHandlers();
