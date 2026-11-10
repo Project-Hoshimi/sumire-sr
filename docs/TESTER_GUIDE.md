@@ -35,8 +35,8 @@ Before you start: your official account lives on the official server. Note your 
 Ask the host for the server URL. If the server requires invites, also ask for an invite link.
 
 1. Open the game and wait for the title screen.
-2. Tap **Switch server** (above TAP TO START).
-3. Tap **Add server** and enter the URL from the host. Later you can pick it from the saved list.
+2. Tap **Switch server** (top-right corner).
+3. Tap **Add private server…** and enter the address from the host. Later you can pick it from the saved list.
 4. The game closes. Reopen it to connect to the new server.
 
 Switching servers clears the game's local account data. Note your account ID and transfer code first.
@@ -47,7 +47,15 @@ If the host gave you an invite link:
 2. The page shows a title ID.
 3. In the game, go to the title screen, then **Account**, then **Enter Link Password**, and enter the title ID and password.
 
-> **Not yet verified:** which TLS certificate a hosted server needs for **Add server** to work, and whether a tester has to install anything. If the game cannot connect after you add a server, tell the host and include the error text. [CLIENT_SETUP.md](CLIENT_SETUP.md) §1 describes the older in-app "Private Server" settings and may not match the current module.
+You do not install a certificate. When you add a server, the module fetches the server's certificate authority (CA) and asks you to confirm its fingerprint:
+
+- Compare the fingerprint in the dialog with the one the host gave you, then confirm.
+- If the host gave you an address that ends in `#sha256=…`, the fingerprint is checked for you and no dialog appears.
+- If the host uses its own domain with a public certificate, no dialog appears either.
+
+Hosts: [CLIENT_CONNECT.md](CLIENT_CONNECT.md) explains where to find the fingerprint and how to set up each case.
+
+> **Not yet verified by an outside tester:** the public-domain case. If the game cannot connect after you add a server, tell the host and include the error text.
 
 ## 4. Path B: run your own server
 
