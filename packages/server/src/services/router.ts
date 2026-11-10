@@ -45,7 +45,7 @@ const GUEST_ALLOWED = new Set([
  * to call during boot. They are answered with an empty protobuf so they cannot
  * wedge the client. Every other unmapped name gets the not-implemented error.
  */
-export const TOLERATED_UNMAPPED_RPCS: ReadonlySet<string> = new Set(['User:Title']);
+export const TOLERATED_UNMAPPED_RPCS: ReadonlySet<string> = new Set(['Refund:GetTerm', 'User:Title']);
 
 const INVITE_ONLY_MESSAGE = message('inviteOnlyBlocked');
 

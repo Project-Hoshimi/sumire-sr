@@ -24,6 +24,15 @@ test('tolerated unmapped User:Title replies with an empty protobuf', async () =>
   assert.equal(bytes.length, 0);
 });
 
-test('TOLERATED_UNMAPPED_RPCS contains exactly User:Title', () => {
-  assert.deepEqual([...TOLERATED_UNMAPPED_RPCS].sort(), ['User:Title']);
+test('tolerated unmapped Refund:GetTerm replies with an empty protobuf', async () => {
+  // The title screen calls it before login; a not-implemented error there
+  // blocks the title screen.
+  assert.equal(endpoints.Refund?.GetTerm, undefined);
+  const bytes = await dispatchRpc('Refund:GetTerm', Buffer.alloc(0), {} as any);
+  assert.ok(Buffer.isBuffer(bytes));
+  assert.equal(bytes.length, 0);
+});
+
+test('TOLERATED_UNMAPPED_RPCS contains exactly Refund:GetTerm and User:Title', () => {
+  assert.deepEqual([...TOLERATED_UNMAPPED_RPCS].sort(), ['Refund:GetTerm', 'User:Title']);
 });
