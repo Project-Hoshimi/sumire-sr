@@ -435,6 +435,42 @@ export async function saveDeck(
   await upsertElements(playerId, posSpec, positions, exec);
 }
 
+/**
+ * Delete a single deck (by `Number`) and all of its positions. Returns the
+ * `Position` values that were removed, ascending. Deleting a deck that does
+ * not exist is a no-op and returns [].
+ */
+export async function deleteDeck(
+  playerId: string,
+  number: number,
+  exec: Executor = db,
+): Promise<number[]> {
+  const specs = new Map(fieldSpecs().map((s) => [s.field, s]));
+  const deckSpec = specs.get('Decks');
+  const posSpec = specs.get('DeckPositions');
+  if (!deckSpec || !posSpec) return [];
+
+  const existing = await exec
+    .select()
+    .from(playerEntities)
+    .where(and(eq(playerEntities.playerId, playerId), eq(playerEntities.kind, 'DeckPositions')));
+  const owned: Row[] = [];
+  const positions: number[] = [];
+  for (const r of existing) {
+    const el = decodeElement(posSpec.shape, r.blob);
+    if (Number(el.Number ?? 0) !== number) continue;
+    owned.push(r);
+    positions.push(Number(el.Position ?? 0));
+  }
+  if (owned.length) {
+    await exec.delete(playerEntities).where(inArray(playerEntities.id, owned.map((r) => r.id)));
+  }
+
+  await deleteElements(playerId, deckSpec, [{ __msg: deckSpec.shape.name, Number: number } as Decoded], exec);
+
+  return positions.sort((a, b) => a - b);
+}
+
 /** Persist `User`/`Balance`/`Points` scalars onto the player row. */
 async function applyScalars(playerId: string, updated: Decoded, exec: Executor = db): Promise<void> {
   const patch: Partial<typeof players.$inferInsert> = {};
