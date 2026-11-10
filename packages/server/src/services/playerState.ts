@@ -471,6 +471,29 @@ export async function deleteDeck(
   return positions.sort((a, b) => a - b);
 }
 
+/**
+ * Reserve the number for a new deck. `User.DeckSequence` counts every deck the
+ * account has ever created and is never reused, so a new deck is numbered one
+ * above it even after earlier decks were deleted (solis-server
+ * makino/user/deck/user_deck.go). A sequence that lags behind the stored decks
+ * is repaired first. Returns the updated `User` for the response, or null when
+ * the player has no stored `User` (the number is then one above the highest
+ * stored deck and nothing is persisted).
+ */
+export async function allocateDeckNumber(
+  playerId: string,
+  exec: Executor = db,
+): Promise<{ number: number; user: Decoded | null }> {
+  const decks = await listElements(playerId, 'Decks', exec);
+  const highest = decks.reduce((max, d) => Math.max(max, Number(d.Number ?? 0)), 0);
+  const current = await getSingleton(playerId, 'User', exec);
+  const number = Math.max(Number(current?.DeckSequence ?? 0), highest) + 1;
+  if (!current) return { number, user: null };
+  const user = { ...current, DeckSequence: number } as Decoded;
+  await putSingleton(playerId, 'User', user, exec);
+  return { number, user };
+}
+
 /** Persist `User`/`Balance`/`Points` scalars onto the player row. */
 async function applyScalars(playerId: string, updated: Decoded, exec: Executor = db): Promise<void> {
   const patch: Partial<typeof players.$inferInsert> = {};

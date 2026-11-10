@@ -3,7 +3,7 @@ import { register } from './handlers.ts';
 import { db } from '../db/client.ts';
 import { withPlayerTx } from '../db/tx.ts';
 import { players, playerEntities } from '../db/schema.ts';
-import { saveDeck, deleteDeck } from './playerState.ts';
+import { allocateDeckNumber, deleteDeck, saveDeck } from './playerState.ts';
 import { GRPC_STATUS, RpcError } from './errors.ts';
 import { decodeMessage, msgRegistry, Reader, type Decoded } from '@sumire-sr/protocol/runtime/proto.ts';
 
@@ -30,8 +30,11 @@ register('Deck:Save', async (ctx) => {
   const [pl] = await db.select().from(players).where(eq(players.accountId, accountId)).limit(1);
   if (!pl) throw new Error('Deck:Save: no player for account');
 
-  const number = Number(req.Number ?? 0);
-  const name = String(req.Name ?? '');
+  // `Number` 0 asks for a new deck: the server assigns the next number in the
+  // account's deck sequence and echoes it (solis-server deck/save.go). Any
+  // other value edits that deck.
+  const requested = Number(req.Number ?? 0);
+  const submittedName = String(req.Name ?? '');
   const submitted = Array.isArray(req.UserDeckPositions) ? (req.UserDeckPositions as Decoded[]) : [];
 
   const ownedCards = await ownedCardIds(pl.id);
@@ -39,11 +42,11 @@ register('Deck:Save', async (ctx) => {
   for (const p of submitted) {
     const cardId = p.CardId == null ? '' : String(p.CardId);
     if (cardId && ownedCards.size > 0 && !ownedCards.has(cardId)) {
-      ctx.fastifyReq.log.warn({ deckNumber: number, cardId }, 'deck save references unowned card');
+      ctx.fastifyReq.log.warn({ deckNumber: requested, cardId }, 'deck save references unowned card');
     }
     positions.push({
       __msg: DECK_POSITION_MSG,
-      Number: number,
+      Number: requested,
       Position: Number(p.Position ?? 0),
       CardId: cardId || undefined,
       Part1AccessoryId: p.Part1AccessoryId,
@@ -55,7 +58,15 @@ register('Deck:Save', async (ctx) => {
     });
   }
 
-  await withPlayerTx(pl.id, (tx) => saveDeck(pl.id, { Number: number, Name: name }, positions, tx));
+  const { number, name, user } = await withPlayerTx(pl.id, async (tx) => {
+    const alloc = requested === 0 ? await allocateDeckNumber(pl.id, tx) : { number: requested, user: null };
+    // The client normally sends the name; the reference server falls back to
+    // this one when it is empty.
+    const deckName = requested === 0 && submittedName === '' ? `ユニット${alloc.number}` : submittedName;
+    for (const p of positions) p.Number = alloc.number;
+    await saveDeck(pl.id, { Number: alloc.number, Name: deckName }, positions, tx);
+    return { number: alloc.number, name: deckName, user: alloc.user };
+  });
 
   ctx.fastifyReq.log.info(
     { accountId, serverUserId: pl.id, deckNumber: number, positions: positions.length },
@@ -68,6 +79,9 @@ register('Deck:Save', async (ctx) => {
       __msg: COMMON_RESPONSE_MSG,
       UpdatedData: {
         __msg: UPDATED_DATA_MSG,
+        // A new deck advances `User.DeckSequence`; the client names the next
+        // new deck from it.
+        User: user ?? undefined,
         Decks: [{ __msg: USER_DECK_MSG, Number: number, Name: name }],
         DeckPositions: positions,
       },
@@ -106,6 +120,7 @@ register('Deck:Delete', async (ctx) => {
     __msg: DECK_DELETE_RESPONSE_MSG,
     CommonResponse: {
       __msg: COMMON_RESPONSE_MSG,
+      UpdatedData: { __msg: UPDATED_DATA_MSG },
       DeletedData: {
         __msg: DELETED_DATA_MSG,
         Decks: [{ __msg: USER_DECK_MSG, Number: number }],
