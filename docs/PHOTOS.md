@@ -4,7 +4,7 @@
 
 ## Residuals (still live — mirrored in `PLANS.md` §1.5)
 
-- **Taken-photo images are blank on-device.** The client uploads the texture to Google Firebase Storage; bytes never reach us. `Photo:GetImageURL` returns placeholder `cdn.idoly.pride.local` URLs. Full fix = redirect the Firebase storage host to our server + implement upload/readback — **deferred until the asset CDN is built**. Predefined location-asset images render fine.
+- **Taken-photo images:** the server side now exists and does not depend on the asset CDN. `packages/server/src/firebaseStorage.ts` emulates Firebase Storage resumable upload and `alt=media` download, and `Photo:GetImageURL` returns `firebasestorage.googleapis.com/v0/b/<bucket>/o/<name>?alt=media&token=…` URLs, not placeholders. For bytes to reach the server, the client must still send `firebasestorage.googleapis.com` to it; the localify runbook currently leaves that host alone. That has not been re-verified on device. The asset mirror (`docs/ASSET_MIRROR.md`) is unrelated to photo storage.
 - **Feature request (2026-10-10):** give the player access to **all poses and facial reactions** in pose photo mode (currently only a subset). Revisit once the asset CDN is built.
 - **Card Gacha cosmetics:** ✅ FIXED 2026-10-10 — pulled cards now grant their tied costume + hairs and surface them in `UpdatedData` (see PLANS §1.5).
 

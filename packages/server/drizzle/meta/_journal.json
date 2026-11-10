@@ -239,6 +239,13 @@
       "when": 1794000000200,
       "tag": "0035_player_birthday_state",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1794210481926,
+      "tag": "0036_narrative_stack_master",
+      "breakpoints": true
     }
   ]
 }

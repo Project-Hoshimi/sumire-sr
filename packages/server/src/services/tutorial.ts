@@ -1,6 +1,6 @@
 import { and, eq } from 'drizzle-orm';
 import { register } from './handlers.ts';
-import { decodeMessage, msgRegistry, Reader } from '@sumire-sr/protocol/runtime/proto.ts';
+import { decodeMessage, encodeMessage, msgRegistry, Reader, Writer } from '@sumire-sr/protocol/runtime/proto.ts';
 import type { Decoded } from '@sumire-sr/protocol/runtime/proto.ts';
 import { playerEntities } from '../db/schema.ts';
 import { withPlayerTx } from '../db/tx.ts';
@@ -10,6 +10,8 @@ import {
   getSingleton,
   isFreshPlayer,
   putElements,
+  readPlayerBalance,
+  withPlayerIdentity,
 } from './playerState.ts';
 import { getFreshCapture } from './replay/corpus.ts';
 import { finishMessage } from './message.ts';
@@ -21,6 +23,7 @@ const USER_TUTORIAL_MSG = 'Solis.Common.Proto.Transaction.UserTutorial';
 const USER_MSG = 'Solis.Common.Proto.Transaction.User';
 const USER_GET_RESPONSE_MSG = 'Solis.Common.Proto.Api.UserGetResponse';
 const PROGRESS_RESPONSE_MSG = 'Solis.Common.Proto.Api.TutorialProgressResponse';
+const REWARD_RESPONSE_MSG = 'Solis.Common.Proto.Api.TutorialActivityReceiveLessonRewardResponse';
 
 // Official fresh-account capture files (see captures/2026-10-25_fresh_official).
 const FRESH_USER_GET = '00005.resp-plain.User:Get.bin';
@@ -64,6 +67,31 @@ function freshTemplateUser(): Decoded | null {
 function freshFinalUser(): Decoded | null {
   const response = decodeCapture(PROGRESS_RESPONSE_MSG, FRESH_FINAL_PROGRESS);
   return (response?.CommonResponse?.UpdatedData?.User as Decoded | undefined) ?? null;
+}
+
+/**
+ * Re-encode a captured response with the player's identity on its `User`
+ * (`UpdatedData.User`, or top-level), so the official account's name is never
+ * returned to the client or materialized into player state.
+ */
+async function withFreshUser(playerId: string, shapeName: string, captured: Buffer): Promise<Buffer> {
+  const shape = msgRegistry.get(shapeName);
+  if (!shape) return captured;
+  const decoded = decodeMessage(shape, new Reader(Uint8Array.from(captured)));
+  const updated = decoded.CommonResponse?.UpdatedData as Decoded | undefined;
+  const capturedUser = (updated?.User ?? decoded.User) as Decoded | undefined;
+  if (!capturedUser) return captured;
+  const user = withPlayerIdentity(capturedUser, await getSingleton(playerId, 'User'));
+  if (updated?.User) updated.User = user;
+  else decoded.User = user;
+  // Stone balances belong to the players columns (source of truth), not to the
+  // captured payload.
+  const balance = await readPlayerBalance(playerId);
+  if (updated) updated.Balance = balance;
+  else decoded.Balance = balance;
+  const w = new Writer();
+  encodeMessage(shape, decoded, w);
+  return Buffer.from(w.toBytes());
 }
 
 /**
@@ -138,10 +166,7 @@ register(
     // their name and timestamps stay theirs.
     if (pl && isFreshPlayer(pl) && tutorialType === FINAL_TUTORIAL_TYPE && step === FINAL_TUTORIAL_STEP) {
       const current = await getSingleton(pl.id, 'User');
-      const user = { ...(freshFinalUser() ?? { __msg: USER_MSG }) } as Decoded;
-      for (const k of ['Name', 'GameStartTime', 'LastLoginTime'] as const) {
-        if (current?.[k] != null) user[k] = current[k];
-      }
+      const user = withPlayerIdentity(freshFinalUser() ?? { __msg: USER_MSG }, current);
       user.TutorialClearedTime = Date.now();
       updated.User = user;
       await withPlayerTx(pl.id, (tx) =>
@@ -167,7 +192,9 @@ register('Tutorial:StartQuest', async (ctx) => {
 register('Tutorial:ReceiveLessonReward', async (ctx) => {
   const pl = await findPlayerByAccountId(ctx.auth.ok ? ctx.auth.claims?.sub : undefined);
   if (!pl || !isFreshPlayer(pl)) return commonOnly();
-  return getFreshCapture(FRESH_LESSON_REWARD) ?? commonOnly();
+  const captured = getFreshCapture(FRESH_LESSON_REWARD);
+  if (!captured) return commonOnly();
+  return withFreshUser(pl.id, REWARD_RESPONSE_MSG, captured);
 });
 
 /**

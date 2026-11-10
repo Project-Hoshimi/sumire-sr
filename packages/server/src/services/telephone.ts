@@ -4,6 +4,8 @@ import { withPlayerTx } from '../db/tx.ts';
 import { getTelephone } from '../master/index.ts';
 import { findPlayerByAccountId, listElements, putElements } from './playerState.ts';
 import type { Decoded } from '@sumire-sr/protocol/runtime/proto.ts';
+import { isSandbox } from '../profile.ts';
+import { reconcileNarrative } from './narrative.ts';
 
 /**
  * Phone calls embedded in message detail graphs. Calls are seeded as finished
@@ -134,8 +136,20 @@ register(
       }
 
       if (changed.length) await putElements(pl.id, 'Telephones', changed, tx);
-      // TODO: Solis reconciles narrative queues after telephone finishes; this
-      // repo has no narrative scheduler.
+      // Official profile only: finishing a call can unlock/schedule the next
+      // idol message or call. The sandbox keeps its pre-seeded state.
+      if (!isSandbox()) {
+        const updated = {
+          __msg: UPDATED_DATA_MSG,
+          ...(changed.length ? { Telephones: changed } : {}),
+        } as Decoded;
+        await reconcileNarrative(pl.id, Date.now(), updated, 'none', '', tx);
+        return {
+          __msg: '',
+          IsReliabilityUp: false,
+          CommonResponse: commonResponse(updated),
+        } as Decoded;
+      }
       return {
         __msg: '',
         IsReliabilityUp: false,

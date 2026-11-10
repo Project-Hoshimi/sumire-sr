@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, like, sql } from 'drizzle-orm';
 import { db } from '../db/client.ts';
 import { serverMeta } from '../db/schema.ts';
 import * as master from '../db/masterSchema.ts';
@@ -309,6 +309,22 @@ export async function getPhotoRarityLevel(rarity: number, level: number) {
 
 export async function listPhotoRarityLevels() {
   return db.select().from(master.masterPhotoRarityLevel);
+}
+
+/** Lowest and highest `Level` across every `PhotoRarityLevel` row; null when the
+ *  master table is empty. Both bounds span all rarities, matching the Solis
+ *  photo generator's clamp. */
+export async function getPhotoRarityLevelRange(): Promise<{ min: number; max: number } | null> {
+  const [row] = await db
+    .select({
+      min: sql<string | null>`min(${master.masterPhotoRarityLevel.Level})`,
+      max: sql<string | null>`max(${master.masterPhotoRarityLevel.Level})`,
+    })
+    .from(master.masterPhotoRarityLevel);
+  const min = Number(row?.min ?? 0);
+  const max = Number(row?.max ?? 0);
+  if (!(min > 0) || !(max >= min)) return null;
+  return { min, max };
 }
 
 export async function getPhotoRetouchEnhance(groupId: string, photoLevel: number) {
@@ -1010,6 +1026,366 @@ export async function getTelephone(id: string) {
     .where(eq(master.masterTelephone.Id, id))
     .limit(1);
   return row ?? null;
+}
+
+export async function listItemsByType(type: number) {
+  return db.select().from(master.masterItem).where(eq(master.masterItem.Type, type));
+}
+
+/** Bulk card lookup (Solis `opmaster.FindLiveCards`). */
+export async function listCardsByIds(ids: string[]) {
+  if (ids.length === 0) return [];
+  return db.select().from(master.masterCard).where(inArray(master.masterCard.Id, ids));
+}
+
+export async function listCardLevels() {
+  return db
+    .select()
+    .from(master.masterCardLevel)
+    .orderBy(master.masterCardLevel.Level);
+}
+
+export async function getManagerLevel(level: number) {
+  const [row] = await db
+    .select()
+    .from(master.masterManagerLevel)
+    .where(eq(master.masterManagerLevel.Level, level))
+    .limit(1);
+  return row ?? null;
+}
+
+export async function getMaxManagerLevel() {
+  const [row] = await db
+    .select()
+    .from(master.masterManagerLevel)
+    .orderBy(desc(master.masterManagerLevel.Level))
+    .limit(1);
+  return row ?? null;
+}
+
+export async function listCharacterActivityLevels() {
+  return db.select().from(master.masterCharacterActivityLevel);
+}
+
+export async function listLiveAbilities(ids: string[]) {
+  if (ids.length === 0) return [];
+  return db.select().from(master.masterLiveAbility).where(inArray(master.masterLiveAbility.Id, ids));
+}
+
+export async function listSkills(ids: string[]) {
+  if (ids.length === 0) return [];
+  return db.select().from(master.masterSkill).where(inArray(master.masterSkill.Id, ids));
+}
+
+export async function listPhotoAbilities(ids: string[]) {
+  if (ids.length === 0) return [];
+  return db.select().from(master.masterPhotoAbility).where(inArray(master.masterPhotoAbility.Id, ids));
+}
+
+export async function getQuest(id: string) {
+  const [row] = await db
+    .select()
+    .from(master.masterQuest)
+    .where(eq(master.masterQuest.Id, id))
+    .limit(1);
+  return row ?? null;
+}
+
+export async function listQuests() {
+  return db.select().from(master.masterQuest);
+}
+
+export async function listQuestsByArea(areaId: string) {
+  return db
+    .select()
+    .from(master.masterQuest)
+    .where(eq(master.masterQuest.AreaId, areaId))
+    .orderBy(master.masterQuest.Order, master.masterQuest.Id);
+}
+
+export async function getArea(id: string) {
+  const [row] = await db
+    .select()
+    .from(master.masterArea)
+    .where(eq(master.masterArea.Id, id))
+    .limit(1);
+  return row ?? null;
+}
+
+export async function listAreas() {
+  return db.select().from(master.masterArea).orderBy(master.masterArea.Order, master.masterArea.Id);
+}
+
+export async function getAreaGroup(id: string) {
+  const [row] = await db
+    .select()
+    .from(master.masterAreaGroup)
+    .where(eq(master.masterAreaGroup.Id, id))
+    .limit(1);
+  return row ?? null;
+}
+
+export async function listAreaGroups() {
+  return db
+    .select()
+    .from(master.masterAreaGroup)
+    .orderBy(master.masterAreaGroup.Order, master.masterAreaGroup.Id);
+}
+
+export async function getMusic(id: string) {
+  const [row] = await db
+    .select()
+    .from(master.masterMusic)
+    .where(eq(master.masterMusic.Id, id))
+    .limit(1);
+  return row ?? null;
+}
+
+/** Chart patterns are keyed by their chart id (e.g. "chart-hsm-006-001"). */
+export async function listMusicChartPatterns(chartId: string) {
+  return db
+    .select()
+    .from(master.masterMusicChartPattern)
+    .where(eq(master.masterMusicChartPattern.Id, chartId))
+    .orderBy(master.masterMusicChartPattern.Number);
+}
+
+export async function listMusicMasteryLevels() {
+  return db
+    .select()
+    .from(master.masterMusicMasteryLevel)
+    .orderBy(master.masterMusicMasteryLevel.Level);
+}
+
+export async function listMusicMasteryRewards(musicId: string) {
+  return db
+    .select()
+    .from(master.masterMusicMasteryReward)
+    .where(eq(master.masterMusicMasteryReward.MusicId, musicId));
+}
+
+export async function listMusicMasteryRewardLevels(rewardSetId: string) {
+  return db
+    .select()
+    .from(master.masterMusicMasteryRewardSet)
+    .where(eq(master.masterMusicMasteryRewardSet.Id, rewardSetId))
+    .orderBy(master.masterMusicMasteryRewardSet.Level);
+}
+
+export async function getSkillEfficacy(id: string) {
+  const [row] = await db
+    .select()
+    .from(master.masterSkillEfficacy)
+    .where(eq(master.masterSkillEfficacy.Id, id))
+    .limit(1);
+  return row ?? null;
+}
+
+export async function listSkillEfficacies(ids: string[]) {
+  if (ids.length === 0) return [];
+  return db.select().from(master.masterSkillEfficacy).where(inArray(master.masterSkillEfficacy.Id, ids));
+}
+
+/**
+ * Destination status definitions encode their master caps in the efficacy id
+ * (`ef-<statusName>-...`). Mirrors Solis `opmaster.FindLiveStatusEfficacy`.
+ */
+export async function findLiveStatusEfficacy(statusName: string) {
+  const [row] = await db
+    .select()
+    .from(master.masterSkillEfficacy)
+    .where(like(master.masterSkillEfficacy.Id, `ef-${statusName}-%`))
+    .limit(1);
+  return row ?? null;
+}
+
+export async function getSkillTrigger(id: string) {
+  const [row] = await db
+    .select()
+    .from(master.masterSkillTrigger)
+    .where(eq(master.masterSkillTrigger.Id, id))
+    .limit(1);
+  return row ?? null;
+}
+
+export async function listSkillTriggers(ids: string[]) {
+  if (ids.length === 0) return [];
+  return db.select().from(master.masterSkillTrigger).where(inArray(master.masterSkillTrigger.Id, ids));
+}
+
+export async function getSkillTarget(id: string) {
+  const [row] = await db
+    .select()
+    .from(master.masterSkillTarget)
+    .where(eq(master.masterSkillTarget.Id, id))
+    .limit(1);
+  return row ?? null;
+}
+
+export async function listSkillTargets(ids: string[]) {
+  if (ids.length === 0) return [];
+  return db.select().from(master.masterSkillTarget).where(inArray(master.masterSkillTarget.Id, ids));
+}
+
+export async function getQuestStaminaConsumption(remainStaminaRatioPercent: number) {
+  const [row] = await db
+    .select()
+    .from(master.masterQuestStaminaConsumption)
+    .where(
+      eq(
+        master.masterQuestStaminaConsumption.RemainStaminaRatioPercent,
+        remainStaminaRatioPercent,
+      ),
+    )
+    .limit(1);
+  return row ?? null;
+}
+
+export async function listQuestStaminaConsumptions() {
+  return db
+    .select()
+    .from(master.masterQuestStaminaConsumption)
+    .orderBy(master.masterQuestStaminaConsumption.RemainStaminaRatioPercent);
+}
+
+export async function listQuestAudienceAdvantages(id: string) {
+  return db
+    .select()
+    .from(master.masterQuestAudienceAdvantage)
+    .where(eq(master.masterQuestAudienceAdvantage.Id, id))
+    .orderBy(master.masterQuestAudienceAdvantage.AudienceAmount);
+}
+
+export async function getQuestCharacterAdvantage(id: string) {
+  const [row] = await db
+    .select()
+    .from(master.masterQuestCharacterAdvantage)
+    .where(eq(master.masterQuestCharacterAdvantage.Id, id))
+    .limit(1);
+  return row ?? null;
+}
+
+export async function listQuestCharacterAdvantages() {
+  return db.select().from(master.masterQuestCharacterAdvantage);
+}
+
+export async function listComboAdvantages(comboAdvantageId?: string) {
+  if (comboAdvantageId) {
+    return db
+      .select()
+      .from(master.masterComboAdvantage)
+      .where(eq(master.masterComboAdvantage.Id, comboAdvantageId))
+      .orderBy(master.masterComboAdvantage.ComboCount);
+  }
+  return db
+    .select()
+    .from(master.masterComboAdvantage)
+    .orderBy(master.masterComboAdvantage.ComboCount);
+}
+
+export async function getQuestPressure(id: string) {
+  const [row] = await db
+    .select()
+    .from(master.masterQuestPressure)
+    .where(eq(master.masterQuestPressure.Id, id))
+    .limit(1);
+  return row ?? null;
+}
+
+export async function getLiveBonus(id: string) {
+  const [row] = await db
+    .select()
+    .from(master.masterLiveBonus)
+    .where(eq(master.masterLiveBonus.Id, id))
+    .limit(1);
+  return row ?? null;
+}
+
+export async function listLiveBonuses(ids: string[]) {
+  if (ids.length === 0) return [];
+  return db.select().from(master.masterLiveBonus).where(inArray(master.masterLiveBonus.Id, ids));
+}
+
+export async function getLiveBonusGroup(groupId: string) {
+  const [row] = await db
+    .select()
+    .from(master.masterLiveBonusGroup)
+    .where(eq(master.masterLiveBonusGroup.GroupId, groupId))
+    .limit(1);
+  return row ?? null;
+}
+
+export async function getPhotoAbilityTarget(id: string) {
+  const [row] = await db
+    .select()
+    .from(master.masterPhotoAbilityTarget)
+    .where(eq(master.masterPhotoAbilityTarget.Id, id))
+    .limit(1);
+  return row ?? null;
+}
+
+export async function listPhotoAbilityTargets(ids: string[]) {
+  if (ids.length === 0) return [];
+  return db
+    .select()
+    .from(master.masterPhotoAbilityTarget)
+    .where(inArray(master.masterPhotoAbilityTarget.Id, ids));
+}
+
+export async function getStage(id: string) {
+  const [row] = await db
+    .select()
+    .from(master.masterStage)
+    .where(eq(master.masterStage.Id, id))
+    .limit(1);
+  return row ?? null;
+}
+
+export async function listStages() {
+  return db.select().from(master.masterStage).orderBy(master.masterStage.Order, master.masterStage.Id);
+}
+
+export async function getStatusEffectName(statusEffectType: number) {
+  const [row] = await db
+    .select()
+    .from(master.masterStatusEffectName)
+    .where(eq(master.masterStatusEffectName.StatusEffectType, statusEffectType))
+    .limit(1);
+  return row ?? null;
+}
+
+export async function listStatusEffectNames() {
+  return db
+    .select()
+    .from(master.masterStatusEffectName)
+    .orderBy(master.masterStatusEffectName.StatusEffectType);
+}
+
+export async function getCondition(id: string) {
+  const [row] = await db.select().from(master.masterCondition).where(eq(master.masterCondition.Id, id)).limit(1);
+  return row ?? null;
+}
+
+export async function listConditions(ids: string[]) {
+  if (ids.length === 0) return [];
+  return db.select().from(master.masterCondition).where(inArray(master.masterCondition.Id, ids));
+}
+
+export async function getFunctionLock(type: number) {
+  const [row] = await db.select().from(master.masterFunctionLock).where(eq(master.masterFunctionLock.Type, type)).limit(1);
+  return row ?? null;
+}
+
+export function listHierarchyDetailGrades() {
+  return db.select().from(master.masterHierarchyDetailGrade);
+}
+
+export function listHierarchyRewards() {
+  return db.select().from(master.masterHierarchyReward);
+}
+
+export function listHierarchyDivisionRewards() {
+  return db.select().from(master.masterHierarchyDivisionReward);
 }
 
 export { master };

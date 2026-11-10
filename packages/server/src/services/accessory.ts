@@ -5,9 +5,9 @@ import { withPlayerTx, type Executor } from '../db/tx.ts';
 import { players } from '../db/schema.ts';
 import { getAccessory, getAccessoryEnhancement, getSetting } from '../master/index.ts';
 import { getCurrency, grantCurrency, spendCurrency } from './currency.ts';
-import { consume, consumptionUpdatedData } from './consumption.ts';
+import { consume, consumptionSpendsStones, mergeConsumptionUpdatedData } from './consumption.ts';
 import { grantAccessory } from './inventory.ts';
-import { listElements, putElements, removeElements } from './playerState.ts';
+import { listElements, putElements, readPlayerBalance, removeElements } from './playerState.ts';
 import { type Decoded } from '@sumire-sr/protocol/runtime/proto.ts';
 
 /**
@@ -286,13 +286,11 @@ register(
 
       if (updatedAccessories.length) updated.Accessories = updatedAccessories;
       if (deletedAccessories.length) deleted.Accessories = deletedAccessories;
-      for (const [key, value] of consumptionUpdatedData(results)) {
-        if (key === 'Accessories') {
-          const merged = ((updated.Accessories as Decoded[] | undefined) ?? []).concat(value as Decoded[]);
-          updated.Accessories = merged;
-        } else {
-          updated[key] = value as Decoded;
-        }
+      // The limit-break cost (items/accessories/gold) must come back with its
+      // post-spend amounts, merged into the same collections.
+      await mergeConsumptionUpdatedData(pl.id, updated, results, tx);
+      if (consumptionSpendsStones(results)) {
+        updated.Balance = await readPlayerBalance(pl.id, tx);
       }
 
       return { updated, deleted, from: accessoryId, to: nextId, consumptionId };

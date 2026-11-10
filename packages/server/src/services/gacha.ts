@@ -21,11 +21,16 @@ import { applyGrants, applyRewardRefs } from '../master/reward.ts';
 import { cosmeticGrantsForCard } from './cardCosmetics.ts';
 import { applyCardBloomPt, grantDuplicateMedal } from './cardBloom.ts';
 import { evolveOnDuplicate } from './cardEvolution.ts';
-import { consume, consumptionResult } from './consumption.ts';
+import {
+  consume,
+  consumptionResult,
+  consumptionSpendsStones,
+  mergeConsumptionUpdatedData,
+} from './consumption.ts';
 import { spendCurrency } from './currency.ts';
 import { buildUserCard, getItemAmount, grantItem, normalizeCardRarityExp, spendItem } from './inventory.ts';
 import { unlockCardStories } from './cardStories.ts';
-import { listElements, putElements } from './playerState.ts';
+import { attachPlayerBalance, listElements, putElements } from './playerState.ts';
 import { type Executor } from '../db/tx.ts';
 import { isSandbox } from '../profile.ts';
 import { sandboxCardBuckets } from '../profiles/sandbox/gacha.ts';
@@ -831,6 +836,16 @@ register(
       });
 
       const updated = buildUpdated(updatedCards, frags);
+      // Every draw echoes the post-spend item/accessory/gold amounts: a ticket
+      // draw that spent tickets must tell the client the new count, or it keeps
+      // showing the old one and lets the player draw again.
+      await mergeConsumptionUpdatedData(pl.id, updated, consumptionResults, tx);
+      // A draw that spends free/paid stones must tell the client the
+      // post-spend balance in the same response; otherwise the client keeps
+      // showing the pre-spend amount and lets the player overspend.
+      if (consumptionSpendsStones(consumptionResults)) {
+        await attachPlayerBalance(pl.id, updated, tx);
+      }
       updated.GachaButtons = [userButton];
       if (unlockedStories.length) updated.Stories = unlockedStories;
 
@@ -930,11 +945,11 @@ register(
       if (gachaId) await putGachaState(pl.id, gachaId, { exchangeCounts }, tx);
 
       const updated = buildUpdated(rewardCards, frags);
-      for (const r of consumptionResults) {
-        const t = Number(r.ResourceType ?? 0);
-        if (t === RESOURCE_ITEM) {
-          updated.Items = [...((updated.Items as Decoded[]) ?? []), { __msg: USER_ITEM_MSG, ItemId: String(r.ResourceId ?? ''), Amount: Number(r.AfterAmount ?? 0) } as Decoded];
-        }
+      // Echo the post-spend amounts of the exchange cost (items/accessories/
+      // gold), merged with any reward that touched the same entry.
+      await mergeConsumptionUpdatedData(pl.id, updated, consumptionResults, tx);
+      if (consumptionSpendsStones(consumptionResults)) {
+        await attachPlayerBalance(pl.id, updated, tx);
       }
 
       return {

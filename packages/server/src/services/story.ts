@@ -11,6 +11,7 @@ import {
   sandboxExtraStoryPartInfos,
 } from '../profiles/sandbox/story.ts';
 import { listElements, putElements } from './playerState.ts';
+import { reconcileNarrative } from './narrative.ts';
 import { getCard as getUserCard } from './inventory.ts';
 import { cardStoryIdsForLevel } from './cardStories.ts';
 import type { Decoded } from '@sumire-sr/protocol/runtime/proto.ts';
@@ -111,6 +112,8 @@ async function performRead(accountId: string, rpc: string, storyId: string): Pro
 
     const updated = applied?.updated ?? ({ __msg: UPDATED_DATA_MSG } as Decoded);
     updated.Stories = [userStory];
+    // Official profile only: reading a story can unlock story-gated idol messages.
+    if (!isSandbox()) await reconcileNarrative(pl.id, Date.now(), updated, 'readStory', storyId, tx);
     return { updated, deleted: null, rewards: applied?.results ?? [] };
   });
 }

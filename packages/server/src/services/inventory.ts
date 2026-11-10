@@ -9,6 +9,7 @@ import {
 import { evolveOnDuplicate } from './cardEvolution.ts';
 import { unlockCardStories } from './cardStories.ts';
 import { applyCardRelease, cardReleaseForCard } from './cardRelease.ts';
+import { ensureCardCharacter, type SpawnedCharacterGrant } from './characterSpawn.ts';
 import { getCard as getMasterCard, getCardParameter, getCardRarity } from '../master/index.ts';
 import type { Decoded } from '@sumire-sr/protocol/runtime/proto.ts';
 
@@ -90,17 +91,18 @@ export async function grantCard(
   playerId: string,
   card: Decoded,
   exec: Executor = db,
-): Promise<void> {
+): Promise<SpawnedCharacterGrant> {
+  const empty: SpawnedCharacterGrant = { characters: [], costumes: [], hairs: [], results: [] };
   const cardId = card.CardId != null ? String(card.CardId) : '';
   if (cardId) {
     const existing = await getCard(playerId, cardId, exec);
     if (existing) {
       // Duplicate copy: convert to bond exp (may evolve + unlock rewards).
       const evo = await evolveOnDuplicate(playerId, cardId, exec);
-      if (evo) return;
+      if (evo) return empty;
       // Non-bond duplicate: merge onto the owned card so its fields survive.
       await putElements(playerId, CARDS, [{ __msg: cardMsg(), ...existing, ...card } as Decoded], exec);
-      return;
+      return empty;
     }
   }
   // New card: always materialize full user-card state (a bare id would leave
@@ -111,7 +113,13 @@ export async function grantCard(
   // level) in the player's Stories collection (PLANS §1.7).
   if (cardId) {
     await unlockCardStories(playerId, cardId, Number(card.Level ?? 1), exec);
+    // Obtaining a card also grants its idol (and default outfits/hairstyles) when
+    // the player does not own that character yet (Solis ensureGachaCharacter).
+    const master = await getMasterCard(cardId);
+    const characterId = master?.CharacterId == null ? '' : String(master.CharacterId);
+    return ensureCardCharacter(playerId, characterId, exec);
   }
+  return empty;
 }
 
 /**

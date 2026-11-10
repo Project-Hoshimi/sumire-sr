@@ -14,6 +14,7 @@ const COMMON_RESPONSE_MSG = 'Solis.Common.Proto.Api.CommonResponse';
 const UPDATED_DATA_MSG = 'Solis.Common.Proto.Api.UpdatedData';
 const DELETED_DATA_MSG = 'Solis.Common.Proto.Api.DeletedData';
 const USER_MISSION_MSG = 'Solis.Common.Proto.Transaction.UserMission';
+const URL_TRANSITION_RESPONSE_MSG = 'Solis.Common.Proto.Api.MissionURLTransitionResponse';
 
 const STATUS_RECEIVED = 4;
 
@@ -110,6 +111,34 @@ register(
       CommonResponse: {
         __msg: COMMON_RESPONSE_MSG,
         UpdatedData: updated,
+        DeletedData: { __msg: DELETED_DATA_MSG } as Decoded,
+      },
+    } as Decoded;
+  },
+  { ownsState: true },
+);
+
+/**
+ * `Mission:URLTransition` — no-op stub.
+ *
+ * Solis returns `MissionURLTransitionResponse` with an empty `CommonResponse`
+ * (containing an empty `UpdatedData` and an empty `DeletedData`).  Sumire-sr
+ * mirrors this exactly: no state change, no URL validation, no mission
+ * progress tracking.
+ *
+ * Solis source: solis-server/internal/server/rpc/servers/mission/url_transition.go:10-14
+ */
+register(
+  'Mission:URLTransition',
+  async (ctx) => {
+    const req = ctx.request;
+    if (!req) throw new Error('Mission:URLTransition: missing request');
+
+    return {
+      __msg: URL_TRANSITION_RESPONSE_MSG,
+      CommonResponse: {
+        __msg: COMMON_RESPONSE_MSG,
+        UpdatedData: { __msg: UPDATED_DATA_MSG } as Decoded,
         DeletedData: { __msg: DELETED_DATA_MSG } as Decoded,
       },
     } as Decoded;

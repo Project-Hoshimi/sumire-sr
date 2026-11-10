@@ -768,7 +768,9 @@ check(
 );
 
 // The real handler must deliver the balance the client header renders; the
-// fresh `User:Get` template carries an empty balance and no points.
+// fresh `User:Get` template carries an empty balance and no points. User:Get
+// reads the balance from the players columns, which the seed tops up for both
+// free and paid stones.
 const userGet = await rpc('User:Get', token, {});
 const balance = (userGet.Balance ?? {}) as Record<string, unknown>;
 check(
@@ -776,7 +778,11 @@ check(
   Number(balance.FreeBalance) === SANDBOX_CURRENCY,
   balance.FreeBalance,
 );
-check('User:Get shows 0 paid jewels', Number(balance.PaidBalance ?? 0) === 0, balance.PaidBalance);
+check(
+  `User:Get shows ${SANDBOX_CURRENCY} paid jewels`,
+  Number(balance.PaidBalance) === SANDBOX_CURRENCY,
+  balance.PaidBalance,
+);
 const points = (userGet.Points ?? []) as Record<string, unknown>[];
 const pointAmount = (type: number) =>
   Number(points.find((p) => Number(p.PointType) === type)?.Amount ?? -1);

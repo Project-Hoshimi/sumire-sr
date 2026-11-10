@@ -5,9 +5,12 @@ import type { RpcContext } from './handlers.ts';
 import { db } from '../db/client.ts';
 import { withPlayerTx, type Executor } from '../db/tx.ts';
 import { players, playerLessonProgress, type ActivityCampaignEffect } from '../db/schema.ts';
-import { getSetting } from '../master/index.ts';
+import { getItem, getSetting, listAreas } from '../master/index.ts';
 import { applyGrants } from '../master/reward.ts';
-import { getSingleton } from './playerState.ts';
+import { getCurrency, spendStone } from './currency.ts';
+import { getItemAmount, spendItem } from './inventory.ts';
+import { listElements } from './playerState.ts';
+import { isSandbox } from '../profile.ts';
 import type { Decoded } from '@sumire-sr/protocol/runtime/proto.ts';
 
 /**
@@ -15,9 +18,9 @@ import type { Decoded } from '@sumire-sr/protocol/runtime/proto.ts';
  *
  * The official service reconciles lesson progress from a master-defined step
  * length, caps the paid idle interval at twelve hours, and applies live campaign
- * permil bonuses at collection time. Only `Activity:ReceiveLessonReward` is
- * server-authoritative here; the remaining Activity endpoints still replay the
- * captured corpus.
+ * permil bonuses at collection time. `Activity:ReceiveLessonReward` and
+ * `Activity:PromoteLesson` are server-authoritative here; the remaining Activity
+ * endpoints still replay the captured corpus.
  */
 
 const COMMON_RESPONSE_MSG = 'Solis.Common.Proto.Api.CommonResponse';
@@ -26,6 +29,7 @@ const ACTIVITY_LESSON_PROGRESS_MSG = 'Solis.Common.Proto.Api.ActivityLessonProgr
 const LESSON_INFO_MSG = 'Solis.Common.Proto.Api.LessonInfo';
 const ACTIVITY_CAMPAIGN_EFFECT_MSG = 'Solis.Common.Proto.Api.ActivityCampaignEffect';
 const REWARD_MSG = 'Solis.Common.Proto.Transaction.Reward';
+const USER_ITEM_MSG = 'Solis.Common.Proto.Transaction.UserItem';
 
 const LESSON_REWARD_WINDOW_MS = 12 * 60 * 60 * 1000;
 const JST_OFFSET_MS = 9 * 60 * 60 * 1000;
@@ -42,12 +46,31 @@ const EFFECT_LESSON_GOLD_UP = 4001;
 const EFFECT_LESSON_EXP_UP = 4002;
 const EFFECT_LESSON_CARD_ENHANCE_ITEM_UP = 4003;
 
+const ITEM_TYPE_ACTIVITY_LESSON_PROMOTE = 1007;
+
 // Solis `activity_defaults.go`: initial step rates, main area and the seeded
 // LessonInfo campaign effect (permanent +100% lesson exp in practice).
 const DEFAULT_STEP_GOLD = 5;
 const DEFAULT_STEP_MANAGER_EXP = 8;
 const DEFAULT_STEP_CARD_ENHANCE_ITEM = 3;
 const DEFAULT_AREA_ID = 'area-main-001';
+const AREA_MAIN = 1;
+
+type LessonStepRates = { gold: number; managerExp: number; cardEnhanceItem: number };
+
+// Official `Home:Enter` LessonProgress step rates keyed by the main area number
+// (captures/2026-10-26_lesson_rate_official, captures/2026-10-09_photo_official).
+// The rate depends only on CurrentAreaId. Areas without a capture use the nearest
+// captured area below them; nothing is interpolated.
+const LESSON_AREA_RATES: ReadonlyArray<{ area: number } & LessonStepRates> = [
+  { area: 1, gold: 5, managerExp: 8, cardEnhanceItem: 3 },
+  { area: 2, gold: 7, managerExp: 9, cardEnhanceItem: 5 },
+  { area: 3, gold: 10, managerExp: 10, cardEnhanceItem: 7 },
+  { area: 6, gold: 25, managerExp: 20, cardEnhanceItem: 16 },
+  { area: 7, gold: 30, managerExp: 24, cardEnhanceItem: 19 },
+  { area: 10, gold: 51, managerExp: 35, cardEnhanceItem: 29 },
+];
+
 const DEFAULT_CAMPAIGN_EFFECTS: ActivityCampaignEffect[] = [
   { Type: EFFECT_LESSON_EXP_UP, Value: 1000, EndTime: 4_124_271_599_000 },
 ];
@@ -130,6 +153,104 @@ async function loadOrSeedProgress(playerId: string, now: number, exec: Executor)
   return row;
 }
 
+export function lessonRatesForArea(areaId: string): LessonStepRates {
+  const match = /^area-main-(\d+)$/.exec(areaId);
+  const area = match ? Number(match[1]) : 0;
+  let rates: LessonStepRates = LESSON_AREA_RATES[0]!;
+  for (const row of LESSON_AREA_RATES) {
+    if (row.area <= area) rates = row;
+  }
+  return { gold: rates.gold, managerExp: rates.managerExp, cardEnhanceItem: rates.cardEnhanceItem };
+}
+
+/**
+ * The official CurrentAreaId is the main area holding the next uncleared main
+ * quest (after the last quest of area 002 clears it is already area-main-003).
+ * Once every main quest is cleared it stays on the last main area.
+ */
+export async function currentLessonAreaId(playerId: string, exec: Executor = db): Promise<string> {
+  const [areas, userAreas, userQuests] = await Promise.all([
+    listAreas(),
+    listElements(playerId, 'Areas', exec),
+    listElements(playerId, 'Quests', exec),
+  ]);
+  const cleared = new Set(
+    userQuests.filter((q) => Number(q.LastClearedTime ?? 0) > 0).map((q) => String(q.QuestId ?? '')),
+  );
+  const clearCount = new Map(userAreas.map((a) => [String(a.AreaId ?? ''), Number(a.ClearQuestCount ?? 0)]));
+  let last = DEFAULT_AREA_ID;
+  for (const area of areas) {
+    if (Number(area.Type) !== AREA_MAIN) continue;
+    const ids = Array.isArray(area.QuestIds) ? area.QuestIds.map(String) : [];
+    if (ids.length === 0) continue;
+    const id = String(area.Id);
+    last = id;
+    if ((clearCount.get(id) ?? 0) >= ids.length) continue;
+    if (ids.some((q) => !cleared.has(q))) return id;
+  }
+  return last;
+}
+
+/**
+ * Move the lesson to `areaId` at `at`. Whole steps already elapsed are banked at
+ * the old rate (up to the 12h cap); later steps accrue at the new area's rate.
+ */
+export function applyLessonArea(
+  progress: LessonProgressRow,
+  areaId: string,
+  at: number,
+  stepMillis: number,
+): boolean {
+  const rates = lessonRatesForArea(areaId);
+  const sameRates =
+    progress.stepRewardGold === rates.gold &&
+    progress.stepRewardManagerExp === rates.managerExp &&
+    progress.stepRewardCardEnhanceItem === rates.cardEnhanceItem;
+  if (progress.currentAreaId === areaId && sameRates) return false;
+
+  if (!sameRates) {
+    const base = Math.max(progress.lastReceiveTime, progress.rateAnchorTime);
+    const end = Math.min(at, progress.maxRewardTime);
+    const steps = end > base ? Math.floor((end - base) / stepMillis) : 0;
+    progress.bankedRewardGold = checkedLessonSum(
+      progress.bankedRewardGold,
+      checkedActivityAmount(steps, progress.stepRewardGold),
+    );
+    progress.bankedRewardManagerExp = checkedLessonSum(
+      progress.bankedRewardManagerExp,
+      checkedActivityAmount(steps, progress.stepRewardManagerExp),
+    );
+    progress.bankedRewardCardEnhanceItem = checkedLessonSum(
+      progress.bankedRewardCardEnhanceItem,
+      checkedActivityAmount(steps, progress.stepRewardCardEnhanceItem),
+    );
+    // 0 means no steps are banked since lastReceiveTime.
+    const anchor = base + steps * stepMillis;
+    progress.rateAnchorTime = anchor > progress.lastReceiveTime ? anchor : 0;
+    progress.stepRewardGold = rates.gold;
+    progress.stepRewardManagerExp = rates.managerExp;
+    progress.stepRewardCardEnhanceItem = rates.cardEnhanceItem;
+  }
+  progress.currentAreaId = areaId;
+  return true;
+}
+
+function checkedLessonSum(a: number, b: number): number {
+  if (a > MAX_INT32 - b) throw new Error('activity reward amount overflows');
+  return a + b;
+}
+
+/** Clear the banked old-rate reward once pending lesson rewards are paid out. */
+function resetLessonPending(progress: LessonProgressRow): void {
+  progress.rewardGold = 0;
+  progress.rewardManagerExp = 0;
+  progress.rewardCardEnhanceItem = 0;
+  progress.bankedRewardGold = 0;
+  progress.bankedRewardManagerExp = 0;
+  progress.bankedRewardCardEnhanceItem = 0;
+  progress.rateAnchorTime = 0;
+}
+
 async function lessonStepSeconds(): Promise<number> {
   const setting = await getSetting();
   const seconds = Number(setting?.SecondsPerActivityLessonStep ?? 0);
@@ -205,6 +326,10 @@ async function saveProgress(progress: LessonProgressRow, exec: Executor): Promis
       rewardGold: progress.rewardGold,
       rewardManagerExp: progress.rewardManagerExp,
       rewardCardEnhanceItem: progress.rewardCardEnhanceItem,
+      bankedRewardGold: progress.bankedRewardGold,
+      bankedRewardManagerExp: progress.bankedRewardManagerExp,
+      bankedRewardCardEnhanceItem: progress.bankedRewardCardEnhanceItem,
+      rateAnchorTime: progress.rateAnchorTime,
       lastReceiveTime: progress.lastReceiveTime,
       maxRewardTime: progress.maxRewardTime,
       dailyPromoteCount: progress.dailyPromoteCount,
@@ -220,6 +345,9 @@ async function saveProgress(progress: LessonProgressRow, exec: Executor): Promis
  * Load/seed + reconcile the player's lesson state. Mirrors
  * `ReconcileActivityLessonProgress` / `ReconcileActivityLessonInfo`: JST daily
  * reset, 12h reward cap, pending step amounts and expired-effect removal.
+ * In the official profile the step rates and CurrentAreaId follow Main Live
+ * progress (`applyLessonArea`); the sandbox profile keeps the seeded rates and
+ * area unchanged.
  */
 export async function reconcileLessonState(
   playerId: string,
@@ -245,12 +373,29 @@ export async function reconcileLessonState(
     changed = true;
   }
 
+  // Official profile only: follow Main Live progress. Sandbox keeps the seeded
+  // rate/area, so this branch (and the banked old-rate columns) never runs there.
+  if (!isSandbox()) {
+    if (applyLessonArea(progress, await currentLessonAreaId(playerId, exec), now, stepMillis)) {
+      changed = true;
+    }
+  }
+
+  const base = Math.max(progress.lastReceiveTime, progress.rateAnchorTime);
   const end = Math.min(now, progress.maxRewardTime);
-  const steps =
-    end > progress.lastReceiveTime ? Math.floor((end - progress.lastReceiveTime) / stepMillis) : 0;
-  const gold = checkedActivityAmount(steps, progress.stepRewardGold);
-  const managerExp = checkedActivityAmount(steps, progress.stepRewardManagerExp);
-  const cardEnhanceItem = checkedActivityAmount(steps, progress.stepRewardCardEnhanceItem);
+  const steps = end > base ? Math.floor((end - base) / stepMillis) : 0;
+  const gold = checkedLessonSum(
+    progress.bankedRewardGold,
+    checkedActivityAmount(steps, progress.stepRewardGold),
+  );
+  const managerExp = checkedLessonSum(
+    progress.bankedRewardManagerExp,
+    checkedActivityAmount(steps, progress.stepRewardManagerExp),
+  );
+  const cardEnhanceItem = checkedLessonSum(
+    progress.bankedRewardCardEnhanceItem,
+    checkedActivityAmount(steps, progress.stepRewardCardEnhanceItem),
+  );
   if (
     progress.rewardGold !== gold ||
     progress.rewardManagerExp !== managerExp ||
@@ -283,23 +428,15 @@ export async function grantActivityReward(
     throw new Error('activity reward must be positive');
   }
   if (reward.resourceType === RES_MANAGER_EXP) {
-    await applyGrants(
+    const applied = await applyGrants(
       playerId,
       [{ resourceType: RES_MANAGER_EXP, resourceId: '', amount: reward.amount }],
       exec,
     );
-    // Mirror `viber.AddManagerExp`: surface the post-grant manager exp to the
-    // client while leaving level progression to the common manager-exp path.
-    const [row] = await exec
-      .select({ exp: players.exp })
-      .from(players)
-      .where(eq(players.id, playerId))
-      .limit(1);
-    const user = await getSingleton(playerId, 'User', exec);
-    if (user) {
-      user.ManagerExp = Number(row?.exp ?? 0);
-      updated.User = user;
-    }
+    // `applyGrants` routes manager exp through `addManagerExp`, which mirrors
+    // Solis `viber.AddManagerExp`: it raises ManagerLevel and surfaces the
+    // updated User (ManagerLevel + ManagerExp) in UpdatedData.
+    mergeUpdated(updated, applied.updated);
     return;
   }
   if (reward.amount > MAX_INT32) {
@@ -438,12 +575,118 @@ register(
       );
       if (rewards.length > 0) {
         advanceLessonReceiveAnchor(state.progress, now, state.stepSeconds);
-        state.progress.rewardGold = 0;
-        state.progress.rewardManagerExp = 0;
-        state.progress.rewardCardEnhanceItem = 0;
+        resetLessonPending(state.progress);
         await saveProgress(state.progress, tx);
       }
       return { rewards, progress: state.progress, effects: state.effects, updated };
+    });
+
+    return {
+      __msg: '',
+      Rewards: out.rewards,
+      Progress: progressMessage(out.progress),
+      CampaignEffects: effectsMessage(out.effects),
+      CampaignDropRewards: [],
+      CommonResponse: commonResponse(out.updated),
+    } as Decoded;
+  },
+  { ownsState: true },
+);
+
+type PromoteSettings = {
+  limitCount: number;
+  freeLimitCount: number;
+  requiredStoneAmount: number;
+  effectHours: number;
+};
+
+async function promoteSettings(): Promise<PromoteSettings> {
+  const setting = await getSetting();
+  return {
+    limitCount: Number(setting?.ActivityLessonPromoteLimitCount ?? 0),
+    freeLimitCount: Number(setting?.ActivityLessonPromoteFreeLimitCount ?? 0),
+    requiredStoneAmount: Number(setting?.ActivityLessonPromoteRequiredStoneAmount ?? 0),
+    effectHours: Number(setting?.ActivityLessonPromoteEffectHours ?? 0),
+  };
+}
+
+/**
+ * `Activity:PromoteLesson` — the home self-training "advance two hours" button.
+ * Mirrors Solis `promote_lesson.go`: spend the free daily promotion, a
+ * lesson-boost item or stones, then pay the pending idle rewards plus
+ * `EffectHours` worth of bonus steps through the same campaign-adjusted path as
+ * `ReceiveLessonReward`. Free and stone promotions count toward the daily
+ * limit; item promotions do not.
+ */
+register(
+  'Activity:PromoteLesson',
+  async (ctx) => {
+    const accountId = accountOf(ctx);
+    const isFree = Boolean(ctx.request?.IsFree);
+    const useItemId = String(ctx.request?.UseItemId ?? '');
+    const pl = await playerForAccount(accountId, 'Activity:PromoteLesson');
+    const out = await withPlayerTx(pl.id, async (tx) => {
+      const now = Date.now();
+      const state = await reconcileLessonState(pl.id, now, tx);
+      const progress = state.progress;
+      const setting = await promoteSettings();
+      const isItemPromotion = !isFree && useItemId !== '';
+      if (!isItemPromotion && progress.dailyPromoteCount >= setting.limitCount) {
+        throw new Error('Activity:PromoteLesson: daily lesson promotion limit reached');
+      }
+
+      const updated: Decoded = { __msg: UPDATED_DATA_MSG } as Decoded;
+      const spentItems: Decoded[] = [];
+      if (isFree) {
+        if (useItemId !== '') {
+          throw new Error('Activity:PromoteLesson: a free lesson promotion cannot use an item');
+        }
+        if (progress.dailyPromoteCount >= setting.freeLimitCount) {
+          throw new Error('Activity:PromoteLesson: daily free lesson promotion already used');
+        }
+      } else if (useItemId !== '') {
+        const item = await getItem(useItemId);
+        if (!item) throw new Error(`Activity:PromoteLesson: unknown item ${useItemId}`);
+        if (Number(item.Type) !== ITEM_TYPE_ACTIVITY_LESSON_PROMOTE) {
+          throw new Error('Activity:PromoteLesson: item cannot promote lessons');
+        }
+        const before = await getItemAmount(pl.id, useItemId, tx);
+        if (before < 1) throw new Error('Activity:PromoteLesson: lesson promotion item is insufficient');
+        await spendItem(pl.id, useItemId, 1, tx);
+        spentItems.push({ __msg: USER_ITEM_MSG, ItemId: useItemId, Amount: before - 1 } as Decoded);
+      } else {
+        const amount = setting.requiredStoneAmount;
+        if (amount <= 0) throw new Error('Activity:PromoteLesson: lesson promotion stone cost is invalid');
+        const stones =
+          (await getCurrency(pl.id, 'freeJewel', tx)) + (await getCurrency(pl.id, 'paidJewel', tx));
+        if (stones < amount) throw new Error('Activity:PromoteLesson: stones are insufficient');
+        updated.Balance = await spendStone(pl.id, amount, tx);
+      }
+
+      if (state.stepSeconds <= 0 || setting.effectHours <= 0) {
+        throw new Error('Activity:PromoteLesson: lesson promotion master settings are invalid');
+      }
+      const bonusSteps = Math.floor((setting.effectHours * 60 * 60) / state.stepSeconds);
+      const rewards = await receiveLessonRewards(
+        pl.id,
+        progress,
+        bonusSteps,
+        state.effects,
+        updated,
+        tx,
+      );
+      // Reward grants replace UpdatedData.Items wholesale; keep the spent boost item.
+      if (spentItems.length) {
+        const granted = ((updated.Items as Decoded[] | undefined) ?? []).filter(
+          (i) => String(i.ItemId ?? '') !== useItemId,
+        );
+        updated.Items = [...granted, ...spentItems] as Decoded[];
+      }
+      if (!isItemPromotion) progress.dailyPromoteCount += 1;
+      advanceLessonReceiveAnchor(progress, now, state.stepSeconds);
+      resetLessonPending(progress);
+      await saveProgress(progress, tx);
+      return { rewards, progress, effects: state.effects, updated };
     });
 
     return {

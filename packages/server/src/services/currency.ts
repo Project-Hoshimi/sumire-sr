@@ -2,6 +2,7 @@ import { eq } from 'drizzle-orm';
 import { db } from '../db/client.ts';
 import { type Executor } from '../db/tx.ts';
 import { players } from '../db/schema.ts';
+import type { Decoded } from '@sumire-sr/protocol/runtime/proto.ts';
 
 /**
  * Player currency helpers over the `players` row. Reads/writes are expected to
@@ -58,4 +59,30 @@ export async function spendCurrency(
     throw new Error(`insufficient ${type}: have ${current}, need ${amount}`);
   }
   await exec.update(players).set({ [type]: current - amount }).where(eq(players.id, playerId));
+}
+
+const USER_BALANCE_MSG = 'Solis.Common.Proto.Transaction.UserBalance';
+
+/**
+ * Spend stones, draining free jewels before paid. Throws (leaving the caller's
+ * transaction to roll back) when the combined balance is short. Returns the
+ * post-spend `UserBalance` slice for `UpdatedData.Balance`.
+ */
+export async function spendStone(
+  playerId: string,
+  amount: number,
+  exec: Executor = db,
+): Promise<Decoded> {
+  const free = await readColumn(playerId, 'freeJewel', exec);
+  let remaining = amount;
+  if (free >= remaining) {
+    await spendCurrency(playerId, 'freeJewel', remaining, exec);
+  } else {
+    await spendCurrency(playerId, 'freeJewel', free, exec);
+    remaining -= free;
+    await spendCurrency(playerId, 'paidJewel', remaining, exec);
+  }
+  const freeAfter = await readColumn(playerId, 'freeJewel', exec);
+  const paidAfter = await readColumn(playerId, 'paidJewel', exec);
+  return { __msg: USER_BALANCE_MSG, FreeBalance: freeAfter, PaidBalance: paidAfter } as Decoded;
 }

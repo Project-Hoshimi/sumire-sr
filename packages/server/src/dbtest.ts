@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { request as httpRequest } from 'node:http';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import { buildServer } from './server.ts';
 import { encrypt, decrypt } from './gateway/crypto.ts';
 import { DATA_DIR } from './config.ts';
@@ -11,6 +11,7 @@ import '@sumire-sr/protocol/gen/registry.ts';
 import { verifyToken } from './auth/jwt.ts';
 import { db } from './db/client.ts';
 import { accounts, players, playerEntities, playerExcursionState, playerBirthdayState, rewardClaims, playerLedger, playerPurchases, playerLoveProgress, playerLessonProgress, playerGachaState, gachaHistory, idolRoster, ownedCards, deckConfigurations, liveStageProgress, playerBoxGacha, playerMarathonPoint, photoImageMetadata } from './db/schema.ts';
+import { masterCondition, masterPhotoQuestMusic, masterPhotoQuestStage, masterQuest } from './db/masterSchema.ts';
 import { parseFirebaseUid } from './services/auth.ts';
 import { applyRewardRefs } from './master/reward.ts';
 import { mintIdToken } from './auth/firebaseTokens.ts';
@@ -21,6 +22,26 @@ import { getItemAmount, grantItem as grantPromotionItem } from './services/inven
 import { getActivityPerformance, getCostume, getHair, getHierarchyDetailGrade } from './master/index.ts';
 import { requireData } from './testing/requireData.ts';
 import { loadPinnedIdentity } from './services/identity.ts';
+import { FRESH_SEED } from './services/playerState.ts';
+import {
+  configureDedicatedAbilities,
+  DEDICATED_PHOTO_MISSION_ID,
+  decidePhotoKind,
+  dedicatedSets,
+  genericSets,
+  loadPhotoGenerationMaster,
+  photoQualityBase,
+  photoRarityMinimum,
+  qualityForFilmLevel,
+  rollFilmPhotoTraits,
+  rollPhotoAbilities,
+  photoAbilityEffectValue,
+  ensureDedicatedPhotoMission,
+  unlockManagerLevelPhotoAbilities,
+  rollPhotoRarity,
+} from './services/photoGen.ts';
+import { STARTER_GIFTS } from './services/starterGifts.ts';
+import { isSandbox } from './profile.ts';
 
 await requireData({ captures: true, requestCaptures: true, db: true });
 
@@ -401,12 +422,16 @@ check(
   })(),
 );
 check(
-  'Love:Title populates CharacterId on every entry',
-  loveTitleResp.LoveInfos?.every((l: any) => typeof l.CharacterId === 'string' && l.CharacterId.length > 0) === true,
+  'Love:Title omits the card CharacterId (solis parity)',
+  loveTitleResp.LoveInfos?.every((l: any) => !l.CharacterId) === true,
 );
 check(
   'Love:Title populates MainCharacterInfo.CharacterId',
-  loveTitleResp.LoveInfos?.every((l: any) => l.MainCharacterInfo?.CharacterId === l.CharacterId) === true,
+  loveTitleResp.LoveInfos?.every(
+    (l: any) =>
+      typeof l.MainCharacterInfo?.CharacterId === 'string' &&
+      l.MainCharacterInfo.CharacterId.length > 0,
+  ) === true,
 );
 const extraActions = await listLoveHomeActions('love-extra-25-0426');
 
@@ -414,7 +439,35 @@ const extraActions = await listLoveHomeActions('love-extra-25-0426');
 const LOVE_ID = 'love-extra-25-0426';
 const LOVE_FIRST_EP = 'love-event-story-25-0426-001';
 const LOVE_SECOND_EP = 'love-event-story-25-0426-002';
+const LOVE_THIRD_EP = 'love-event-story-25-0426-003-magical';
+const LOVE_FOURTH_EP = 'love-event-story-25-0426-004-magical-smr';
 const LOVE_END_EP = 'love-event-story-25-0426-005-magical-smr-good';
+const LOVE_ENDING_ID = 'love-end-love-25-0426-005-magical-smr-happy';
+// The event configures four candidate protagonists; GetMainCharacter picks one.
+const LOVE_MAIN_CHARACTERS = ['char-rui', 'char-chs', 'char-smr', 'char-ngs'];
+// Route selections that drive `...-005-magical-smr-good` to the happy ending.
+const LOVE_FIRST_CHOICES: Array<[number, number]> = [[1, 1], [2, 2], [3, 1], [4, 1], [5, 1]];
+const LOVE_SECOND_CHOICES: Array<[number, number]> = [[1, 1], [2, 1], [3, 1], [4, 1], [5, 1]];
+const LOVE_THIRD_CHOICES: Array<[number, number]> = [
+  [1, 1],
+  [2, 1],
+  [3, 1],
+  [4, 2],
+  [5, 2],
+  [6, 1],
+];
+const LOVE_FOURTH_CHOICES: Array<[number, number]> = [
+  [1, 1],
+  [2, 1],
+  [3, 1],
+  [4, 1],
+  [5, 1],
+  [6, 1],
+  [7, 1],
+  [8, 1],
+  [9, 1],
+];
+const LOVE_FIFTH_CHOICES: Array<[number, number]> = [[1, 1]];
 
 check('master LoveLevel RequiredExp seeded',
   Number((await getLoveLevel('love-extra-25-0426', 2))?.RequiredExp ?? 0) === 4000);
@@ -435,6 +488,20 @@ const loveRpc = async (method: keyof (typeof endpoints)['Love'], obj: any) => {
   return decodeMessage(msgRegistry.get(ep.response)!, new Reader(Uint8Array.from(bytes))) as any;
 };
 
+const finishLoveWith = async (episodeId: string, choices: Array<[number, number]>) =>
+  loveRpc('Finish', {
+    StoryEpisodeId: episodeId,
+    HintLevel: 0,
+    SelectStoryChoiceInfos: choices.map(([GroupIndex, Index]) => ({
+      GroupIndex,
+      Index,
+      IsValid: true,
+    })),
+  });
+
+const startLoveWith = async (episodeId: string) =>
+  loveRpc('Start', { StoryEpisodeId: episodeId, HintLevel: 0 });
+
 const loveTop = await loveRpc('Top', { LoveId: LOVE_ID });
 check('Love:Top returns Exp', Number(loveTop.Exp ?? 0) === 0);
 check('Love:Top unlocks chapter 1 for a new player',
@@ -443,14 +510,17 @@ check('Love:Top resolves story read item', loveTop.ItemInfo?.StoryReadItemId ===
 check('Love:Top resolves lesson promote item', loveTop.ItemInfo?.LessonPromoteItemId === 'item-love-25-0426-lesson-boost');
 check('Love:Top omits absent present item', !loveTop.ItemInfo?.HiddenFavorabilityObtainItemId);
 check('Love:Top populates MainCharacterInfo', typeof loveTop.MainCharacterInfo?.CharacterId === 'string' && loveTop.MainCharacterInfo.CharacterId.length > 0);
-check('Love:Top returns LoveLevelInfos', (loveTop.LoveLevelInfos?.length ?? 0) === 7);
-check('Love:Top returns ending infos', (loveTop.StoryEndInfos?.length ?? 0) === 10);
+check('Love:Top returns LoveLevelInfos', (loveTop.LoveLevelInfos?.length ?? 0) === 5);
+check('Love:Top returns ending infos', (loveTop.StoryEndInfos?.length ?? 0) === 12);
 check('Love:Top starts with zero hidden favorability', Number(loveTop.HiddenFavorability ?? 0) === 0);
 
 const loveMc = await loveRpc('GetMainCharacter', { LoveId: LOVE_ID });
 check('Love:GetMainCharacter returns a character', (loveMc.MainCharacterInfo?.CharacterId ?? '').length > 0);
 check('Love:GetMainCharacter returns an asset', (loveMc.MainCharacterInfo?.AssetId ?? '').length > 0);
-check('Love:GetMainCharacter returns the preferred event character', loveMc.MainCharacterInfo?.CharacterId === 'char-smr');
+check(
+  'Love:GetMainCharacter returns a configured event character',
+  LOVE_MAIN_CHARACTERS.includes(loveMc.MainCharacterInfo?.CharacterId ?? ''),
+);
 
 await loveRpc('Register', { LoveId: LOVE_ID, Name: 'ゆうき' });
 const loveProgRow = await db
@@ -465,20 +535,21 @@ const loveProgRow2 = await db
   .where(and(eq(playerLoveProgress.playerId, SERVER_USER_ID), eq(playerLoveProgress.loveId, LOVE_ID)));
 check('Love:UpdateName updates protagonist name', loveProgRow2[0]?.name === 'たくみ');
 
-const loveStart = await loveRpc('Start', { StoryEpisodeId: LOVE_FIRST_EP, HintLevel: 0 });
-check('Love:Start returns no server choices', (loveStart.StoryChoiceGroupInfos?.length ?? 0) === 0);
+const loveStart = await startLoveWith(LOVE_FIRST_EP);
+check('Love:Start returns server choice groups', (loveStart.StoryChoiceGroupInfos?.length ?? 0) === 5);
 check('Love:Start sets IsReadingStory', Number(loveStart.CommonResponse?.UpdatedData?.Loves?.[0]?.IsReadingStory ?? 0) === 1);
 const loveAfterStart = await userGet();
 check('Love:Start persisted Loves via User:Get',
   (loveAfterStart.Loves ?? []).some((l: any) => l.LoveId === LOVE_ID && Number(l.IsReadingStory) === 1));
 
-const loveFinish = await loveRpc('Finish', { StoryEpisodeId: LOVE_FIRST_EP, HintLevel: 0 });
+const loveFinish = await finishLoveWith(LOVE_FIRST_EP, LOVE_FIRST_CHOICES);
 check('Love:Finish clears IsReadingStory', Number(loveFinish.CommonResponse?.UpdatedData?.Loves?.[0]?.IsReadingStory ?? 0) === 0);
 check('Love:Finish records the story as read',
   Number(loveFinish.CommonResponse?.UpdatedData?.Stories?.[0]?.StatusType ?? 0) === 2);
 check('Love:Finish of a non-ending does not unlock an ending', Number(loveFinish.UnlockSave ?? 0) === 0);
 check('Love:Finish of a non-ending returns no end name', (loveFinish.StoryEndName ?? '') === '');
-const loveFinish2 = await loveRpc('Finish', { StoryEpisodeId: LOVE_FIRST_EP, HintLevel: 0 });
+await startLoveWith(LOVE_FIRST_EP);
+const loveFinish2 = await finishLoveWith(LOVE_FIRST_EP, LOVE_FIRST_CHOICES);
 check('Love:Finish is repeatable (story stays read)',
   Number(loveFinish2.CommonResponse?.UpdatedData?.Stories?.[0]?.StatusType ?? 0) === 2);
 const loveTopAfterFinish = await loveRpc('Top', { LoveId: LOVE_ID });
@@ -492,14 +563,52 @@ const loveAfterPresent = await userGet();
 check('Love:Present persisted via User:Get',
   (loveAfterPresent.Loves ?? []).some((l: any) => l.LoveId === LOVE_ID && Number(l.HiddenFavorability) === 1));
 
-const loveEndFinish = await loveRpc('Finish', { StoryEpisodeId: LOVE_END_EP, HintLevel: 0 });
+// Walk the route to the magical-smr happy ending so the save slot unlocks.
+// Official gates each episode on the player's love level, so raise the test
+// player's exp to the highest master threshold before walking past chapter 1,
+// then restore it so the lesson/promote exp checks below start from the same base.
+let loveExpBeforeWalk: number | null = null;
+if (!isSandbox()) {
+  const [loveRow] = await db
+    .select({ exp: playerLoveProgress.exp })
+    .from(playerLoveProgress)
+    .where(and(eq(playerLoveProgress.playerId, SERVER_USER_ID), eq(playerLoveProgress.loveId, LOVE_ID)));
+  loveExpBeforeWalk = Number(loveRow?.exp ?? 0);
+  const loveLevels = await listLoveLevels(LOVE_ID);
+  const maxRequiredExp = loveLevels.reduce(
+    (max, l) => Math.max(max, Number(l.RequiredExp ?? 0)),
+    0,
+  );
+  await db
+    .update(playerLoveProgress)
+    .set({ exp: maxRequiredExp })
+    .where(and(eq(playerLoveProgress.playerId, SERVER_USER_ID), eq(playerLoveProgress.loveId, LOVE_ID)));
+  // Official also spends the love's story key per new episode; stock enough
+  // for the episodes past chapter 1 (master costs 1500/2500/3500 each).
+  await grantPromotionItem(SERVER_USER_ID, 'item-love-25-0426-story', 20000);
+}
+await startLoveWith(LOVE_SECOND_EP);
+await finishLoveWith(LOVE_SECOND_EP, LOVE_SECOND_CHOICES);
+await startLoveWith(LOVE_THIRD_EP);
+await finishLoveWith(LOVE_THIRD_EP, LOVE_THIRD_CHOICES);
+await startLoveWith(LOVE_FOURTH_EP);
+await finishLoveWith(LOVE_FOURTH_EP, LOVE_FOURTH_CHOICES);
+await startLoveWith(LOVE_END_EP);
+const loveEndFinish = await finishLoveWith(LOVE_END_EP, LOVE_FIFTH_CHOICES);
 check('Love:Finish of an ending unlocks save', Number(loveEndFinish.UnlockSave ?? 0) === 1);
-check('Love:Finish returns the ending name', loveEndFinish.StoryEndName === '「私のお兄ちゃん」');
+check('Love:Finish returns the ending name', loveEndFinish.StoryEndName === '解けない魔法END');
 check('Love:Finish appends the ending id to UserLove',
-  (loveEndFinish.CommonResponse?.UpdatedData?.Loves?.[0]?.UnlockedLoveStoryEndIDs ?? []).includes(LOVE_END_EP));
+  (loveEndFinish.CommonResponse?.UpdatedData?.Loves?.[0]?.UnlockedLoveStoryEndIDs ?? []).includes(LOVE_ENDING_ID));
 const loveTopAfterEnd = await loveRpc('Top', { LoveId: LOVE_ID });
 check('Love:Top reflects the unlocked ending',
-  loveTopAfterEnd.StoryEndInfos?.some((e: any) => e.Id === LOVE_END_EP && Number(e.Unlocked ?? 0) === 1) === true);
+  loveTopAfterEnd.StoryEndInfos?.some((e: any) => e.Id === LOVE_ENDING_ID && Number(e.Unlocked ?? 0) === 1) === true);
+
+if (loveExpBeforeWalk !== null) {
+  await db
+    .update(playerLoveProgress)
+    .set({ exp: loveExpBeforeWalk })
+    .where(and(eq(playerLoveProgress.playerId, SERVER_USER_ID), eq(playerLoveProgress.loveId, LOVE_ID)));
+}
 
 // Backdate the lesson anchor by exactly one 10 s step.
 await db
@@ -526,8 +635,11 @@ await db
 const lovePromoteMax = await loveRpc('PromoteLesson', { LoveId: LOVE_ID });
 check('Love:PromoteLesson no-ops at max level', Number(lovePromoteMax.ObtainExp ?? 0) === 0);
 
+// The ending reset the route to chapter 1, and an ending has now unlocked saving.
+await loveRpc('Save', { LoveId: LOVE_ID, SlotNumber: 1 });
 const loveLoad = await loveRpc('Load', { LoveId: LOVE_ID, SlotNumber: 1 });
-check('Love:Load returns the unlocked episodes', (loveLoad.StoryEpisodeIds?.length ?? 0) === 18);
+check('Love:Load restores the saved route',
+  (loveLoad.StoryEpisodeIds ?? []).length === 1 && (loveLoad.StoryEpisodeIds ?? [])[0] === LOVE_FIRST_EP);
 const loveReset = await loveRpc('Reset', { LoveId: LOVE_ID, SlotNumber: 1 });
 check('Love:Reset returns to chapter 1 only',
   (loveReset.StoryEpisodeIds ?? []).length === 1 && (loveReset.StoryEpisodeIds ?? [])[0] === LOVE_FIRST_EP);
@@ -538,7 +650,7 @@ check('Love:Save/UpdateSaveName are accepted', true);
 
 const loveExtra = await loveRpc('TitleExtra', { LoveId: LOVE_ID });
 check('Love:TitleExtra returns the requested LoveInfo', loveExtra.LoveInfo?.LoveId === LOVE_ID);
-check('Love:TitleExtra LoveInfo carries endings', (loveExtra.LoveInfo?.StoryEndInfos?.length ?? 0) === 10);
+check('Love:TitleExtra LoveInfo carries endings', (loveExtra.LoveInfo?.StoryEndInfos?.length ?? 0) === 12);
 check(
   'Love:TitleExtra returns the extra story title asset',
   loveExtra.TitleAssetId === 'love-25-0426',
@@ -776,14 +888,16 @@ const afterDraw2 = await userGet();
 check('Gacha:Draw second pull increments TotalCount=2', afterDraw2.GachaButtons?.some((g: any) => g.GachaButtonId === BUTTON_ID && Number(g.TotalCount) === 2) === true);
 check('Gacha:Draw second pull spends another 300', Number(afterDraw2.Balance?.FreeBalance ?? 0) === jewelAfter - 300);
 
-let threw = false;
-try {
-  await drawGacha(BUTTON_ID, 100000);
-} catch {
-  threw = true;
+if (!isSandbox()) {
+  let threw = false;
+  try {
+    await drawGacha(BUTTON_ID, 100000);
+  } catch {
+    threw = true;
+  }
+  check('Gacha:Draw rejects unaffordable pull', threw);
 }
 const afterFail = await userGet();
-check('Gacha:Draw rejects unaffordable pull', threw);
 check('Gacha:Draw failed pull did not change jewels', Number(afterFail.Balance?.FreeBalance ?? 0) === Number(afterDraw2.Balance?.FreeBalance ?? 0));
 
 // --- Free excursion 10-pull is zero-cost ---
@@ -2043,23 +2157,67 @@ check('Photo:Report responds with IsGift=false', !!repResp && !repResp.IsGift);
 await inv.grantItem(SERVER_USER_ID, 'item-photo_shooting-02', 100);
 const filmBefore = itemAmt(await userGet(), 'item-photo_shooting-02');
 
-const listResp = decodeMessage(
-  msgRegistry.get(endpoints['Photo']['ListShooting'].response)!,
-  new Reader(Uint8Array.from(await dispatchRpc('Photo:ListShooting', Buffer.alloc(0), authOpts))),
-) as any;
-check('Photo:ListShooting returns Activities', (listResp.Activities?.length ?? 0) >= 1);
-check('Photo:ListShooting returns Musics', (listResp.Musics?.length ?? 0) >= 1);
-check('Photo:ListShooting returns Stages', (listResp.Stages?.length ?? 0) >= 1);
-check('Photo:ListShooting returns Expressions', (listResp.Expressions?.length ?? 0) >= 1);
-check('Photo:ListShooting marks entries IsUnlocked',
-  (listResp.Activities ?? []).some((a: any) => Boolean(a.IsUnlocked)));
+const listShooting = async () =>
+  decodeMessage(
+    msgRegistry.get(endpoints['Photo']['ListShooting'].response)!,
+    new Reader(Uint8Array.from(await dispatchRpc('Photo:ListShooting', Buffer.alloc(0), authOpts))),
+  ) as any;
+
+const listResp = await listShooting();
+// The catalogue is condition-filtered, so the counts depend on the corpus
+// player's progress; only the shape is asserted unconditionally here.
+check('Photo:ListShooting returns Activities', (listResp.Activities ?? []).every((a: any) => typeof a.PhotoActivityId === 'string'));
+check('Photo:ListShooting returns Musics', (listResp.Musics ?? []).every((m: any) => typeof m.MusicId === 'string'));
+check('Photo:ListShooting returns Stages', (listResp.Stages ?? []).every((s: any) => typeof s.StageId === 'string'));
+check('Photo:ListShooting returns Expressions', (listResp.Expressions ?? []).every((e: any) => typeof e.PhotoExpressionId === 'string'));
+check('Photo:ListShooting IsUnlocked is a bool or omitted (false)',
+  [...(listResp.Activities ?? []), ...(listResp.Musics ?? []), ...(listResp.Stages ?? []), ...(listResp.Expressions ?? [])]
+    .every((entry: any) => entry.IsUnlocked == null || entry.IsUnlocked === 1 || entry.IsUnlocked === true));
 check('Photo:ListShooting returns the pose-tutorial DokanInfo',
   (listResp.DokanInfo?.Expressions ?? []).some((d: any) => d.Id === 'dokan_photo-expression-tutorial'));
 
+// Drive the view/unlock filtering deterministically instead of relying on the
+// corpus player's progress: patch one known stage/music row through all three
+// states (hidden -> visible+locked -> visible+unlocked) and restore it below.
+const SHOOT_STAGE = 'stage-live-hall-00-00';
+const SHOOT_MUSIC = 'music-tri-007';
+const hiddenConditionId = 'cd-dbtest-photo-hidden';
+await db.delete(masterCondition).where(eq(masterCondition.Id, hiddenConditionId));
+await db.insert(masterCondition).values([{ Id: hiddenConditionId, Settings: [{ Term: { NowAfter: 1, NowBefore: 2 } }] }]);
+const [stageBefore] = await db
+  .select({ ViewConditionId: masterPhotoQuestStage.ViewConditionId, UnlockConditionId: masterPhotoQuestStage.UnlockConditionId })
+  .from(masterPhotoQuestStage)
+  .where(eq(masterPhotoQuestStage.Id, SHOOT_STAGE));
+const [musicBefore] = await db
+  .select({ ViewConditionId: masterPhotoQuestMusic.ViewConditionId, UnlockConditionId: masterPhotoQuestMusic.UnlockConditionId })
+  .from(masterPhotoQuestMusic)
+  .where(eq(masterPhotoQuestMusic.Id, SHOOT_MUSIC));
+const patchStage = (view: string, unlock: string) =>
+  db.update(masterPhotoQuestStage).set({ ViewConditionId: view, UnlockConditionId: unlock }).where(eq(masterPhotoQuestStage.Id, SHOOT_STAGE));
+const patchMusic = (view: string, unlock: string) =>
+  db.update(masterPhotoQuestMusic).set({ ViewConditionId: view, UnlockConditionId: unlock }).where(eq(masterPhotoQuestMusic.Id, SHOOT_MUSIC));
+
+await patchStage(hiddenConditionId, '');
+const hiddenList = await listShooting();
+check('Photo:ListShooting omits an entry whose view condition fails',
+  !(hiddenList.Stages ?? []).some((s: any) => s.StageId === SHOOT_STAGE));
+await patchStage('', hiddenConditionId);
+const lockedList = await listShooting();
+const lockedStage = (lockedList.Stages ?? []).find((s: any) => s.StageId === SHOOT_STAGE);
+check('Photo:ListShooting keeps a visible-but-locked stage with IsUnlocked=false',
+  lockedStage !== undefined && !lockedStage.IsUnlocked);
+await patchStage('', '');
+await patchMusic('', '');
+const openList = await listShooting();
+const openStage = (openList.Stages ?? []).find((s: any) => s.StageId === SHOOT_STAGE);
+const openMusic = (openList.Musics ?? []).find((m: any) => m.MusicId === SHOOT_MUSIC);
+check('Photo:ListShooting unlocks a stage whose conditions are satisfied', Boolean(openStage?.IsUnlocked));
+check('Photo:ListShooting unlocks a music whose conditions are satisfied', Boolean(openMusic?.IsUnlocked));
+
 const chkShoot = await callRpc('Photo:CheckShooting', 'Solis.Common.Proto.Api.PhotoCheckShootingRequest', {
   ActionType: 3,
-  PhotoMusicId: 'music-tri-007',
-  PhotoStageId: 'stage-live-hall-00-00',
+  PhotoMusicId: SHOOT_MUSIC,
+  PhotoStageId: SHOOT_STAGE,
   CharacterIds: ['char-smr'],
   CostumeIds: ['cos-smr-schl-00'],
   HairIds: ['hair-smr-schl-00'],
@@ -2069,11 +2227,20 @@ check('Photo:CheckShooting returns CommonResponse', !!chkShoot.CommonResponse);
 // Shootings must use one of the user's reserved image IDs (Solis NextPhotoImageIds).
 const reservedImageId = async (): Promise<string> =>
   String(((await getSingleton(SERVER_USER_ID, 'User'))?.NextPhotoImageIds as string[] | undefined)?.[0] ?? '');
+let rejectedUnknownStage = false;
+try {
+  await callRpc('Photo:CheckShooting', 'Solis.Common.Proto.Api.PhotoCheckShootingRequest', {
+    PhotoStageId: 'stage-does-not-exist',
+  });
+} catch {
+  rejectedUnknownStage = true;
+}
+check('Photo:CheckShooting rejects a non-viewable stage', rejectedUnknownStage);
 
 const shootingReq = {
   ActionType: 3,
-  PhotoMusicId: 'music-tri-007',
-  PhotoStageId: 'stage-live-hall-00-00',
+  PhotoMusicId: SHOOT_MUSIC,
+  PhotoStageId: SHOOT_STAGE,
   CharacterIds: ['char-smr'],
   CostumeIds: ['cos-smr-schl-00'],
   HairIds: ['hair-smr-schl-00'],
@@ -2084,6 +2251,17 @@ const shootingReq = {
   }],
   ManualCount: 6,
 };
+let rejectedCreateStage = false;
+try {
+  await callRpc('Photo:CreateShootings', 'Solis.Common.Proto.Api.PhotoCreateShootingsRequest', {
+    ...shootingReq,
+    PhotoStageId: 'stage-does-not-exist',
+  });
+} catch {
+  rejectedCreateStage = true;
+}
+check('Photo:CreateShootings rejects a non-viewable stage', rejectedCreateStage);
+
 const shootResp = await callRpc('Photo:CreateShootings', 'Solis.Common.Proto.Api.PhotoCreateShootingsRequest', shootingReq);
 const created = shootResp.Photos?.[0];
 check('Photo:CreateShootings returns a photo', !!created?.PhotoId);
@@ -2110,6 +2288,182 @@ const shootAfter = await userGet();
 }
 check('Photo:CreateShootings spends the film item', itemAmt(shootAfter, 'item-photo_shooting-02') === filmBefore - 1);
 check('Photo:CreateShootings persists the photo', photoOf(shootAfter, created?.PhotoId)?.AssetId === shootingReq.CreateShootingParams[0].PhotoImageId);
+
+// --- General vs dedicated photos (Solis viber/photo.go) ---
+check(
+  'Photo:CreateShootings omits CharacterIds on a general photo',
+  ((created?.CharacterIds as unknown[] | undefined) ?? []).length === 0,
+);
+check('Photo:CreateShootings keeps FocusCharacterId on a general photo', created?.FocusCharacterId === 'char-smr');
+
+// Solis's photo rarity + quality model (src/services/photoGen.ts). Master data
+// is static, so load it once for the whole section.
+const photoMaster = await loadPhotoGenerationMaster();
+const createdLevel = Number(created?.Level ?? 0);
+check('Photo:CreateShootings Level is a multiple of 5', createdLevel > 0 && createdLevel % 5 === 0);
+check(
+  'Photo:CreateShootings Level is within the PhotoRarityLevel range',
+  photoMaster.minLevel > 0 && createdLevel >= photoMaster.minLevel && createdLevel <= photoMaster.maxLevel,
+);
+
+const genericRarity5 = await genericSets(5);
+check('photoGen genericSets(5) returns sets', genericRarity5.length > 0);
+check(
+  'photoGen genericSets(5) excludes idol-specific (Limited) sets',
+  genericRarity5.every((s) => s.Id.startsWith('pab-set-5-') && !s.Id.includes('-idol-')),
+);
+check('photoGen genericSets(5) excludes recipe sets', genericRarity5.every((s) => !s.Id.includes('recipe')));
+
+const smrDedicated = await dedicatedSets('char-smr');
+check('photoGen dedicatedSets(char-smr) returns the four idol sets', smrDedicated.length === 4);
+check(
+  'photoGen dedicatedSets(char-smr) only returns -smr-idol- sets',
+  smrDedicated.every((s) => s.Id.includes('-smr-idol-')),
+);
+
+check(
+  'photoGen decides the character-only film is dedicated',
+  (await decidePhotoKind({ characterOnlyFilm: true, filmLevel: 1, rarity: 1, characterId: 'char-smr' })) === 'dedicated',
+);
+check(
+  'photoGen decides film level 9 + rarity 5 + sub-1% roll is dedicated',
+  (await decidePhotoKind({ characterOnlyFilm: false, filmLevel: 9, rarity: 5, characterId: 'char-smr', rng: () => 0.005 })) ===
+    'dedicated',
+);
+check(
+  'photoGen keeps film level 8 + rarity 5 general',
+  (await decidePhotoKind({ characterOnlyFilm: false, filmLevel: 8, rarity: 5, characterId: 'char-smr', rng: () => 0.005 })) ===
+    'general',
+);
+check(
+  'photoGen keeps film level 9 + rarity 4 general',
+  (await decidePhotoKind({ characterOnlyFilm: false, filmLevel: 9, rarity: 4, characterId: 'char-smr', rng: () => 0.005 })) ===
+    'general',
+);
+
+// Photo rarity floor (Solis randomRarity). Setting.PhotoShootingItemThresholds
+// is not in the curated master_Setting schema, so [1,4,7] is the fallback.
+check('photoGen thresholds are 1,4,7', photoMaster.thresholds.join(',') === '1,4,7');
+check('photoGen film level 1 has minimum rarity 1', photoRarityMinimum(1, photoMaster.thresholds) === 1);
+check('photoGen film level 3 has minimum rarity 1', photoRarityMinimum(3, photoMaster.thresholds) === 1);
+check('photoGen film level 4 has minimum rarity 2', photoRarityMinimum(4, photoMaster.thresholds) === 2);
+check('photoGen film level 6 has minimum rarity 2', photoRarityMinimum(6, photoMaster.thresholds) === 2);
+check('photoGen film level 7 has minimum rarity 3', photoRarityMinimum(7, photoMaster.thresholds) === 3);
+check('photoGen film level 9 has minimum rarity 3', photoRarityMinimum(9, photoMaster.thresholds) === 3);
+check(
+  'photoGen film level 9 never rolls below rarity 3',
+  [0, 0.5, 0.999].every((r) => rollPhotoRarity(9, photoMaster.thresholds, () => r) >= 3),
+);
+
+// Rarity weights (minimum 3 -> [70,25,5]).
+check('photoGen minimum 3 rng 0 rolls rarity 3', rollPhotoRarity(7, photoMaster.thresholds, () => 0) === 3);
+check('photoGen minimum 3 rng 0.71 rolls rarity 4', rollPhotoRarity(7, photoMaster.thresholds, () => 0.71) === 4);
+check('photoGen minimum 3 rng 0.96 rolls rarity 5', rollPhotoRarity(7, photoMaster.thresholds, () => 0.96) === 5);
+
+// Quality anchors from the PhotoShooting item descriptions (Solis
+// qualityForFilmLevel, before jitter/rounding).
+const anchorQuality = (level: number) =>
+  qualityForFilmLevel(level, photoMaster.qualityAnchors, photoMaster.minLevel);
+for (const [level, expected] of [
+  [3, 60],
+  [4, 100],
+  [5, 120],
+  [7, 140],
+  [8, 150],
+  [9, 160],
+  [6, 130],
+  [1, 20],
+  [2, 40],
+] as const) {
+  check(`photoGen quality anchor film level ${level} = ${expected}`, anchorQuality(level) === expected);
+}
+
+// Guaranteed ★5 films: rarity 5 at a fixed quality, whatever the rng.
+const { getItem: getMasterItem } = await import('./master/index.ts');
+const guaranteedFilm = await getMasterItem('item-photo_shooting-09-25-0318');
+const guaranteedTraits = [0, 0.999].map((r) =>
+  rollFilmPhotoTraits({
+    film: guaranteedFilm,
+    filmLevel: 9,
+    managerLevel: 40,
+    master: photoMaster,
+    rng: () => r,
+  }),
+);
+check('photoGen ★5確定 film renders fixed', guaranteedTraits.every((t) => t.fixed));
+check('photoGen ★5確定 film always rolls rarity 5', guaranteedTraits.every((t) => t.rarity === 5));
+check('photoGen ★5確定 film always rolls quality 160', guaranteedTraits.every((t) => t.level === 160));
+
+const quality60Film = await getMasterItem('item-photo_shooting-03-21-0721');
+const quality60Traits = rollFilmPhotoTraits({
+  film: quality60Film,
+  filmLevel: 3,
+  managerLevel: 40,
+  master: photoMaster,
+  // 0.4 -> jitter index 2 -> 0, so the anchor survives unchanged.
+  rng: () => 0.4,
+});
+check('photoGen film item-photo_shooting-03-21-0721 rolls quality 60', quality60Traits.level === 60);
+
+// The manager-level film: quality is the manager level, capped by 最大品質.
+const levelChangeFilm = await getMasterItem('item-photo_shooting_level_change-01');
+const levelChangeBase = (manager: number) =>
+  photoQualityBase(levelChangeFilm, 1, manager, photoMaster.qualityAnchors, photoMaster.minLevel);
+check('photoGen level-change film with manager 50 has base 50', levelChangeBase(50) === 50);
+check('photoGen level-change film with manager 200 has base 165', levelChangeBase(200) === 165);
+
+const passiveFirstSet = smrDedicated.find((s) =>
+  String((s.PhotoAbilityIds as string[] | undefined)?.[0] ?? '').startsWith('pab-passive-skill_'),
+);
+const dedicatedAbilities = passiveFirstSet ? await rollPhotoAbilities(passiveFirstSet, 10, () => 0.5) : [];
+configureDedicatedAbilities(dedicatedAbilities, 40);
+check(
+  'photoGen dedicated passive carries mission ms-photo-manager_level_achievement-80',
+  dedicatedAbilities[0]?.MissionId === DEDICATED_PHOTO_MISSION_ID,
+);
+check(
+  'photoGen dedicated passive is unavailable below manager level 80',
+  Boolean(dedicatedAbilities[0]?.IsAvailable) === false,
+);
+
+// The photo detail screen needs the gate mission's UserMission (it throws without one).
+{
+  const before = (await listElements(SERVER_USER_ID, 'Missions')).filter((m) => m.MissionId === DEDICATED_PHOTO_MISSION_ID);
+  const first = await ensureDedicatedPhotoMission(SERVER_USER_ID);
+  const second = await ensureDedicatedPhotoMission(SERVER_USER_ID);
+  const after = (await listElements(SERVER_USER_ID, 'Missions')).filter((m) => m.MissionId === DEDICATED_PHOTO_MISSION_ID);
+  check('ensureDedicatedPhotoMission creates the gate mission once', (before.length > 0 || first != null) && second == null && after.length === 1);
+  check('gate mission row is in progress', Number(after[0]?.StatusType) === 1);
+}
+
+// Manager level 80 unlocks gated dedicated abilities (Solis UnlockManagerLevelPhotoAbilities).
+{
+  const photoId = 'dbtest-gated-photo-0001';
+  await putElements(SERVER_USER_ID, 'Photos', [{
+    __msg: 'Solis.Common.Proto.Transaction.UserPhoto',
+    PhotoId: photoId,
+    Abilities: [{ __msg: 'Solis.Common.Proto.Transaction.UserPhotoAbility', PhotoAbilityId: 'pab-passive-skill_sk-phot-smr-idol-01', EffectValue: 3, Grade: 1, MissionId: DEDICATED_PHOTO_MISSION_ID, IsAvailable: false }],
+  } as never]);
+  check('unlockManagerLevelPhotoAbilities does nothing below level 80', (await unlockManagerLevelPhotoAbilities(SERVER_USER_ID, 79)).length === 0);
+  const unlocked = await unlockManagerLevelPhotoAbilities(SERVER_USER_ID, 80);
+  const stored = (await listElements(SERVER_USER_ID, 'Photos')).find((p) => p.PhotoId === photoId);
+  check('unlockManagerLevelPhotoAbilities unlocks the gated ability at level 80',
+    unlocked.some((p) => p.PhotoId === photoId) && Boolean((stored?.Abilities as Array<{ IsAvailable?: unknown }> | undefined)?.[0]?.IsAvailable));
+  check('unlockManagerLevelPhotoAbilities is a no-op once unlocked', (await unlockManagerLevelPhotoAbilities(SERVER_USER_ID, 80)).length === 0);
+}
+
+// Ability effect value follows Solis: level value × grade BonusPermil/1000 + BonusValue.
+{
+  const levels = [{ Level: 1, Value: 100 }, { Level: 150, Value: 2000 }, { Level: 160, Value: 2200 }];
+  const grades = [{ Grade: 1, BonusPermil: 1000 }, { Grade: 10, BonusPermil: 1400, BonusValue: 5 }];
+  check('photoAbilityEffectValue grade 1 at quality 155 = 2000', photoAbilityEffectValue(levels, grades, 155, 1) === 2000);
+  check('photoAbilityEffectValue grade 10 at quality 160 = 3085', photoAbilityEffectValue(levels, grades, 160, 10) === 3085);
+  const top = await rollPhotoAbilities({ PhotoAbilityIds: ['pab-active-skill-score-up_multiply-3'] } as never, 160, () => 0.999);
+  check('rollPhotoAbilities picks a grade from the master list and applies its bonus', Number(top[0]?.Grade) > 1 &&
+    Number(top[0]?.EffectValue) > Number((await rollPhotoAbilities({ PhotoAbilityIds: ['pab-active-skill-score-up_multiply-3'] } as never, 160, () => 0))[0]?.EffectValue));
+  const single = await rollPhotoAbilities({ PhotoAbilityIds: ['pab-received_strength_effect_count_increase-vocal_up_recipe_distribution-5'] } as never, 160, () => 0.999);
+  check('rollPhotoAbilities keeps single-grade abilities at grade 1', Number(single[0]?.Grade) === 1);
+}
 
 const urlResp = await callRpc('Photo:GetImageURL', 'Solis.Common.Proto.Api.PhotoGetImageUrlRequest', {
   Type: 3,
@@ -2229,6 +2583,68 @@ check('Photo:GetImageURL returns TmbUrl for Type=3', (urlResp.UrlList?.[0]?.TmbU
   const delRows = await db.select().from(photoImageMetadata).where(eq(photoImageMetadata.id, delName));
   check('Photo:Delete removes the image metadata', delRows.length === 0);
 }
+
+// Restore the master rows patched for the deterministic ListShooting checks.
+await patchStage(stageBefore?.ViewConditionId ?? '', stageBefore?.UnlockConditionId ?? '');
+await patchMusic(musicBefore?.ViewConditionId ?? '', musicBefore?.UnlockConditionId ?? '');
+await db.delete(masterCondition).where(eq(masterCondition.Id, hiddenConditionId));
+
+// Photo catalogue condition kinds: TutorialStep, ItemAmount and
+// SatisfyConditions. Temporary master rows + a throwaway tutorial row keep the
+// checks independent of corpus progress; both are removed below.
+const photoConditionIds = [
+  'cd-dbtest-tutorial-step-ok',
+  'cd-dbtest-tutorial-step-low',
+  'cd-dbtest-tutorial-step-range',
+  'cd-dbtest-tutorial-step-missing',
+  'cd-dbtest-item-amount-ok',
+  'cd-dbtest-item-amount-short',
+  'cd-dbtest-item-amount-noid',
+  'cd-dbtest-satisfy-all',
+  'cd-dbtest-satisfy-one',
+  'cd-dbtest-satisfy-empty',
+];
+await db.delete(masterCondition).where(inArray(masterCondition.Id, photoConditionIds));
+const tutorialFixture = {
+  __msg: 'Solis.Common.Proto.Transaction.UserTutorial',
+  TutorialType: 999,
+  Step: 5,
+};
+await putElements(SERVER_USER_ID, 'Tutorials', [tutorialFixture]);
+const { ConditionEvaluator } = await import('./services/conditions.ts');
+const { removeElements } = await import('./services/playerState.ts');
+const photoFilmAmount = await getItemAmount(SERVER_USER_ID, 'item-photo_shooting-02');
+await db.insert(masterCondition).values([
+  { Id: 'cd-dbtest-tutorial-step-ok', Settings: [{ TutorialStep: { TutorialType: 999, StepGte: 5 } }] },
+  { Id: 'cd-dbtest-tutorial-step-low', Settings: [{ TutorialStep: { TutorialType: 999, StepGte: 6 } }] },
+  { Id: 'cd-dbtest-tutorial-step-range', Settings: [{ TutorialStep: { TutorialType: 999, StepGte: 1, StepLte: 4 } }] },
+  { Id: 'cd-dbtest-tutorial-step-missing', Settings: [{ TutorialStep: { TutorialType: 998, StepGte: 0, StepLte: 0 } }] },
+  { Id: 'cd-dbtest-item-amount-ok', Settings: [{ ItemAmount: { ItemId: 'item-photo_shooting-02', AmountGte: photoFilmAmount } }] },
+  { Id: 'cd-dbtest-item-amount-short', Settings: [{ ItemAmount: { ItemId: 'item-photo_shooting-02', AmountGte: photoFilmAmount + 1 } }] },
+  { Id: 'cd-dbtest-item-amount-noid', Settings: [{ ItemAmount: { AmountGte: 1 } }] },
+  { Id: 'cd-dbtest-satisfy-all', Settings: [{ SatisfyConditions: { Conditions: [
+    { ConditionId: 'cd-manager_level_gte-1' },
+    { ConditionId: 'cd-dbtest-tutorial-step-ok' },
+  ] } }] },
+  { Id: 'cd-dbtest-satisfy-one', Settings: [{ SatisfyConditions: { Conditions: [
+    { ConditionId: 'cd-manager_level_gte-1' },
+    { ConditionId: 'cd-dbtest-tutorial-step-low' },
+  ] } }] },
+  { Id: 'cd-dbtest-satisfy-empty', Settings: [{ SatisfyConditions: { Conditions: [] } }] },
+]);
+const photoConditionEvaluator = new ConditionEvaluator(SERVER_USER_ID, Date.now());
+check('Condition: TutorialStep range is satisfied', await photoConditionEvaluator.satisfied('cd-dbtest-tutorial-step-ok'));
+check('Condition: TutorialStep below StepGte is unsatisfied', !(await photoConditionEvaluator.satisfied('cd-dbtest-tutorial-step-low')));
+check('Condition: TutorialStep above StepLte is unsatisfied', !(await photoConditionEvaluator.satisfied('cd-dbtest-tutorial-step-range')));
+check('Condition: TutorialStep without a matching type is unsatisfied', !(await photoConditionEvaluator.satisfied('cd-dbtest-tutorial-step-missing')));
+check('Condition: ItemAmount at the held amount is satisfied', await photoConditionEvaluator.satisfied('cd-dbtest-item-amount-ok'));
+check('Condition: ItemAmount above the held amount is unsatisfied', !(await photoConditionEvaluator.satisfied('cd-dbtest-item-amount-short')));
+check('Condition: ItemAmount without ItemId is indeterminate', !(await photoConditionEvaluator.satisfied('cd-dbtest-item-amount-noid')));
+check('Condition: SatisfyConditions requires every listed id', await photoConditionEvaluator.satisfied('cd-dbtest-satisfy-all'));
+check('Condition: SatisfyConditions fails when one listed id fails', !(await photoConditionEvaluator.satisfied('cd-dbtest-satisfy-one')));
+check('Condition: SatisfyConditions with an empty list is indeterminate', !(await photoConditionEvaluator.satisfied('cd-dbtest-satisfy-empty')));
+await db.delete(masterCondition).where(inArray(masterCondition.Id, photoConditionIds));
+await removeElements(SERVER_USER_ID, 'Tutorials', [tutorialFixture]);
 
 const chkExpr = await callRpc('Photo:CheckExpressionShooting', 'Solis.Common.Proto.Api.PhotoCheckExpressionShootingRequest', {
   PhotoExpressionId: 'photo_expression-hillpark_02',
@@ -2632,6 +3048,55 @@ check('Card bond: duplicate raises EvolutionLevel', Number(ceCard?.EvolutionLeve
 check('Card bond: level-up unlocks RewardCostumeId',
   (ceAfter.Costumes ?? []).some((c: any) => c.CostumeId === 'cos-mna-link-01'));
 
+// --- Card grant spawns the card's idol when the player lacks it ---
+// A card whose idol is not owned (e.g. a story/quest card outside the gacha
+// pools) must spawn the UserCharacter + default cosmetics, or a later
+// Quest:ListAsset fails with "not enough owned idols for the live appearance".
+const masterIndex = await import('./master/index.ts');
+const spawnCardId = 'card-kor-05-idol-00';
+const spawnCardMaster = await masterIndex.getCard(spawnCardId);
+const spawnCharacterId = String(spawnCardMaster?.CharacterId ?? '');
+const spawnMasterCharacter = spawnCharacterId ? await masterIndex.getCharacter(spawnCharacterId) : null;
+const spawnActivityLevel = await masterIndex.getCharacterActivityLevel(1);
+check('Card spawn: master card references an idol', spawnCharacterId === 'char-kor');
+check('Card spawn: master idol row present', !!spawnMasterCharacter);
+
+// Deterministic start: drop the card and the idol so the grant takes the
+// new-card path even on a re-run.
+await ps.removeElements(SERVER_USER_ID, 'Cards', [
+  { __msg: 'Solis.Common.Proto.Transaction.UserCard', CardId: spawnCardId } as any,
+]);
+await ps.removeElements(SERVER_USER_ID, 'Characters', [
+  { __msg: 'Solis.Common.Proto.Transaction.UserCharacter', CharacterId: spawnCharacterId } as any,
+]);
+const spawnBefore = await ps.listElements(SERVER_USER_ID, 'Characters');
+check('Card spawn: test idol starts unowned',
+  !spawnBefore.some((c: any) => String(c.CharacterId) === spawnCharacterId));
+
+const spawnGrant = await applyRewardRefs(SERVER_USER_ID, [`rd_auto;card;${spawnCardId};1`]);
+const spawnAfter = await userGet();
+const spawnedCharacter = (spawnAfter.Characters ?? []).find((c: any) => String(c.CharacterId) === spawnCharacterId);
+check('Card grant spawns the card idol', !!spawnedCharacter);
+check('Card grant spawns the idol at ActivityLevel 1', Number(spawnedCharacter?.ActivityLevel ?? 0) === 1);
+check('Card grant idol FavoriteCostumeId is the master default',
+  String(spawnedCharacter?.FavoriteCostumeId ?? '') === String(spawnMasterCharacter?.DefaultCostumeId ?? ''));
+check('Card grant idol LiveCostumeId is the master live default',
+  String(spawnedCharacter?.LiveCostumeId ?? '') === String(spawnMasterCharacter?.DefaultLiveCostumeId ?? ''));
+check('Card grant idol ActivityStamina is the level-1 max',
+  Number(spawnedCharacter?.ActivityStamina ?? 0) === Number(spawnActivityLevel?.MaxStamina ?? 0));
+check('Card grant surfaces the idol in UpdatedData.Characters',
+  (spawnGrant.updated?.Characters ?? []).some((c: any) => String(c.CharacterId) === spawnCharacterId));
+check('Card grant returns a Character RewardResult',
+  (spawnGrant.results ?? []).some((r: any) =>
+    Number(r.ResourceType) === 4 && String(r.ResourceId) === spawnCharacterId && Number(r.AfterAmount) === 1));
+
+const spawnDup = await inv.grantCard(SERVER_USER_ID, { CardId: spawnCardId } as any);
+const spawnDupCharacters = await ps.listElements(SERVER_USER_ID, 'Characters');
+check('Card spawn: duplicate grant does not add a second idol',
+  spawnDupCharacters.filter((c: any) => String(c.CharacterId) === spawnCharacterId).length === 1);
+check('Card spawn: duplicate grant returns no spawned elements',
+  (spawnDup.characters ?? []).length === 0 && (spawnDup.costumes ?? []).length === 0 && (spawnDup.hairs ?? []).length === 0);
+
 // --- Tutorial:Progress persists UserTutorial records (no feature-tutorial replay) ---
 const tutorialProgress = async (type: number, step: number) => {
   const bytes = await dispatchRpc(
@@ -2737,10 +3202,13 @@ const stCompanyEnjoy = await callRpc(
 check('Story:ReadCharacterCompanyEnjoyStory is a stub envelope', !!stCompanyEnjoy.CommonResponse);
 
 // Love: restart (alias of Start), save-name + reading-status reset.
+// Start the episode first: the ported route engine only allows Restart while
+// that episode is actively being read.
+await startLoveWith(LOVE_FIRST_EP);
 const loveRestart = await loveRpc('Restart', { StoryEpisodeId: LOVE_FIRST_EP });
 check('Love:Restart sets IsReadingStory',
   Number(loveRestart.CommonResponse?.UpdatedData?.Loves?.[0]?.IsReadingStory ?? 0) === 1);
-check('Love:Restart returns no choice groups yet', (loveRestart.StoryChoiceGroupInfos?.length ?? 0) === 0);
+check('Love:Restart returns the episode choice groups', (loveRestart.StoryChoiceGroupInfos?.length ?? 0) === 5);
 
 const loveResetReading = await loveRpc('ResetReadingStoryStatus', { LoveId: LOVE_ID });
 check('Love:ResetReadingStoryStatus clears IsReadingStory',

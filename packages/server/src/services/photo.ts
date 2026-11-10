@@ -52,10 +52,11 @@ import {
   getExcursionPlace,
 } from '../master/index.ts';
 import { applyGrants, applyRewardRefs, type Grant } from '../master/reward.ts';
-import { getCurrency, spendCurrency } from './currency.ts';
+import { spendStone } from './currency.ts';
 import { getItemAmount, spendItem } from './inventory.ts';
-import { consume, consumptionUpdatedData } from './consumption.ts';
-import { getSingleton, listElements, putElements, putSingleton, removeElements } from './playerState.ts';
+import { consume, consumptionSpendsStones, consumptionUpdatedData } from './consumption.ts';
+import { ConditionEvaluator } from './conditions.ts';
+import { getSingleton, listElements, putElements, putSingleton, readPlayerBalance, removeElements } from './playerState.ts';
 import { isSandbox } from '../profile.ts';
 import { SANDBOX_SPECIAL_PHOTO_SHOOTING_ID } from '../profiles/sandbox/specialPhoto.ts';
 import {
@@ -74,6 +75,18 @@ import {
   withSandboxShowcaseSlots,
 } from '../profiles/sandbox/showcase.ts';
 import { encodeMessage, msgRegistry, Writer, type Decoded } from '@sumire-sr/protocol/runtime/proto.ts';
+import {
+  configureDedicatedAbilities,
+  DEDICATED_PHOTO_MISSION_ID,
+  dedicatedSets as genDedicatedSets,
+  ensureDedicatedPhotoMission,
+  genericSets as genGenericSets,
+  managerLevel as photoManagerLevel,
+  pickAbilitySet,
+  rollFilmPhotoTraits,
+  rollPhotoAbilities,
+  type PhotoAbilitySetRow,
+} from './photoGen.ts';
 import {
   PHOTO_OBJECT_PREFIX,
   clonePhotoImage,
@@ -100,7 +113,6 @@ const PHOTO_ABILITY_MSG = 'Solis.Common.Proto.Transaction.UserPhotoAbility';
 const PHOTO_RECIPE_MSG = 'Solis.Common.Proto.Transaction.UserPhotoRecipe';
 const USER_MSG = 'Solis.Common.Proto.Transaction.User';
 const USER_ITEM_MSG = 'Solis.Common.Proto.Transaction.UserItem';
-const USER_BALANCE_MSG = 'Solis.Common.Proto.Transaction.UserBalance';
 const COMMON_RESPONSE_MSG = 'Solis.Common.Proto.Api.CommonResponse';
 const UPDATED_DATA_MSG = 'Solis.Common.Proto.Api.UpdatedData';
 const DELETED_DATA_MSG = 'Solis.Common.Proto.Api.DeletedData';
@@ -380,6 +392,12 @@ async function randomAbilities(
     );
   }
   return buildPhotoAbilitiesFromSet(candidates[Math.floor(Math.random() * candidates.length)], level);
+}
+
+/** Pick a random set from `sets` and roll each of its abilities at `level`. */
+async function rollAbilities(sets: PhotoAbilitySetRow[], level: number): Promise<Decoded[]> {
+  const set = pickAbilitySet(sets);
+  return set ? rollPhotoAbilities(set, level) : [];
 }
 
 async function generatePhoto(
@@ -746,7 +764,24 @@ async function runPhoto<T>(
   fn: (tx: Executor, playerId: string) => Promise<T>,
 ): Promise<T> {
   const pl = await playerForAccount(accountId, rpc);
-  return withPlayerTx(pl.id, (tx) => fn(tx, pl.id));
+  return withPlayerTx(pl.id, async (tx) => {
+    const res = await fn(tx, pl.id);
+    await attachDedicatedPhotoMission(tx, pl.id, (res as { updated?: Decoded } | null)?.updated);
+    return res;
+  });
+}
+
+/** A response carrying a photo with a mission-gated ability also carries that
+ *  mission's UserMission, creating it if the player has none (see
+ *  `ensureDedicatedPhotoMission`). */
+async function attachDedicatedPhotoMission(exec: Executor, playerId: string, updated: Decoded | undefined): Promise<void> {
+  const photos = (updated?.Photos as Decoded[] | undefined) ?? [];
+  const gated = photos.some((p) =>
+    ((p.Abilities as Decoded[] | undefined) ?? []).some((a) => a.MissionId === DEDICATED_PHOTO_MISSION_ID),
+  );
+  if (!gated) return;
+  const row = await ensureDedicatedPhotoMission(playerId, exec);
+  if (row) updated!.Missions = [...((updated!.Missions as Decoded[] | undefined) ?? []), row];
 }
 
 function commonOnly(res: PhotoResult): Decoded {
@@ -774,21 +809,6 @@ async function requirePhoto(exec: Executor, playerId: string, photoId: string, r
 
 function itemSlice(itemId: string, amount: number): Decoded {
   return { __msg: USER_ITEM_MSG, ItemId: itemId, Amount: amount } as Decoded;
-}
-
-async function spendStone(exec: Executor, playerId: string, amount: number): Promise<Decoded> {
-  const free = await getCurrency(playerId, 'freeJewel', exec);
-  let remaining = amount;
-  if (free >= remaining) {
-    await spendCurrency(playerId, 'freeJewel', remaining, exec);
-  } else {
-    await spendCurrency(playerId, 'freeJewel', free, exec);
-    remaining -= free;
-    await spendCurrency(playerId, 'paidJewel', remaining, exec);
-  }
-  const freeAfter = await getCurrency(playerId, 'freeJewel', exec);
-  const paidAfter = await getCurrency(playerId, 'paidJewel', exec);
-  return { __msg: USER_BALANCE_MSG, FreeBalance: freeAfter, PaidBalance: paidAfter } as Decoded;
 }
 
 // Solis photo_panorama/catalogdata/photo_panorama.yaml.
@@ -907,12 +927,16 @@ async function checkPhotoShooting(
   validatePhotoStyleLists(characterIds, costumeIds, hairIds);
 
   const actionType = Number(request?.ActionType ?? 0);
+  const catalog = await photoCatalog(playerId, exec);
   if (actionType === 1 || actionType === 2) {
     const activityId = String(request?.PhotoActivityId ?? '');
     if (!activityId) throw new Error('photoActivityId is required');
     const activity = await getPhotoActivity(activityId);
     if (!activity) throw new Error(`photo activity not found ${activityId}`);
     if (Number(activity.Type ?? 0) !== actionType) throw new Error(`photo activity ${activityId} action type mismatch`);
+    const entry = catalog.activities.find((a) => a.id === activityId);
+    if (!entry) throw new Error(`photo activity ${activityId} is not viewable`);
+    if (!entry.unlocked) throw new Error(`photo activity ${activityId} is locked`);
   } else if (actionType === 3) {
     const musicId = String(request?.PhotoMusicId ?? '');
     const stageId = String(request?.PhotoStageId ?? '');
@@ -920,6 +944,12 @@ async function checkPhotoShooting(
     if (!stageId) throw new Error('photoStageId is required');
     if (!(await getPhotoQuestMusic(musicId))) throw new Error(`photo music not found ${musicId}`);
     if (!(await getPhotoStage(stageId))) throw new Error(`photo stage not found ${stageId}`);
+    const music = catalog.musics.find((m) => m.id === musicId);
+    if (!music) throw new Error(`photo music ${musicId} is not viewable`);
+    if (!music.unlocked) throw new Error(`photo music ${musicId} is locked`);
+    const stage = catalog.stages.find((s) => s.id === stageId);
+    if (!stage) throw new Error(`photo stage ${stageId} is not viewable`);
+    if (!stage.unlocked) throw new Error(`photo stage ${stageId} is locked`);
   } else {
     throw new Error(`unsupported photo shooting action type ${actionType}`);
   }
@@ -1172,7 +1202,7 @@ register(
         const user = await loadUser(tx, playerId);
         const count = Number(user.PhotoLimitExtendedCount ?? 0);
         if (count >= limit) throw new Error(`Photo:ExtendLimit: already at max ${limit}`);
-        const balance = await spendStone(tx, playerId, Number(setting?.PhotoLimitExtendStone ?? 100));
+        const balance = await spendStone(playerId, Number(setting?.PhotoLimitExtendStone ?? 100), tx);
         user.PhotoLimitExtendedCount = count + 1;
         await putSingleton(playerId, 'User', user, tx);
         ctx.fastifyReq.log.info({ accountId, playerId, count: count + 1 }, 'photo extend limit');
@@ -1207,13 +1237,14 @@ register(
         photo.PhotoRecipeId = recipeId;
         await putElements(playerId, 'Photos', [photo], tx);
         ctx.fastifyReq.log.info({ accountId, playerId, photoId, recipeId }, 'photo retouch');
-        return {
-          updated: updatedData(
-            ['Photos', [photo]],
-            ...consumptionUpdatedData(results),
-          ),
-          deleted: null,
-        };
+        const updated = updatedData(
+          ['Photos', [photo]],
+          ...consumptionUpdatedData(results),
+        );
+        if (consumptionSpendsStones(results)) {
+          updated.Balance = await readPlayerBalance(playerId, tx);
+        }
+        return { updated, deleted: null };
       }),
     );
   },
@@ -1235,7 +1266,19 @@ register(
         if (!row) throw new Error('Photo:Reroll: no PhotoRarityLevel row');
         const cost = Number(row.RerollRequiredItem ?? 0);
         await spendItem(playerId, PHOTO_REROLL_ITEM, cost, tx);
-        photo.Abilities = [];
+        // A dedicated photo (non-empty CharacterIds) stays dedicated and rerolls
+        // from that idol's dedicated sets; a general photo stays general.
+        const characterIds = ((photo.CharacterIds as unknown[] | undefined) ?? [])
+          .map((id) => String(id))
+          .filter(Boolean);
+        const level = Number(photo.Level ?? 10);
+        if (characterIds.length) {
+          const sets = await genDedicatedSets(characterIds[0]);
+          photo.Abilities = await rollAbilities(sets, level);
+          configureDedicatedAbilities(photo.Abilities as Decoded[], await photoManagerLevel(playerId, tx));
+        } else {
+          photo.Abilities = await rollAbilities(await genGenericSets(Number(photo.Rarity ?? 1)), level);
+        }
         photo.Rerollable = false;
         await putElements(playerId, 'Photos', [photo], tx);
         const remaining = await getItemAmount(playerId, PHOTO_REROLL_ITEM, tx);
@@ -1398,44 +1441,97 @@ register(
   { ownsState: true },
 );
 
+type PhotoCatalogEntry = { id: string; name: string; unlocked: boolean };
+
+type PhotoCatalogRow = {
+  Id: string;
+  Name: string | null;
+  ViewConditionId: string | null;
+  UnlockConditionId: string | null;
+};
+
+/** Drop rows whose `ViewConditionId` is unsatisfied; flag the rest by `UnlockConditionId`. */
+async function filterPhotoRows(
+  rows: PhotoCatalogRow[],
+  evaluator: ConditionEvaluator,
+): Promise<PhotoCatalogEntry[]> {
+  const entries: PhotoCatalogEntry[] = [];
+  for (const row of rows) {
+    if (!(await evaluator.satisfied(row.ViewConditionId))) continue;
+    entries.push({
+      id: String(row.Id),
+      name: String(row.Name ?? ''),
+      unlocked: await evaluator.satisfied(row.UnlockConditionId),
+    });
+  }
+  return entries;
+}
+
+/**
+ * The player's viewable photo catalogue, in master order. An entry is present
+ * only when its `ViewConditionId` is satisfied (empty id = satisfied); its
+ * `IsUnlocked` comes from `UnlockConditionId` (empty id = satisfied).
+ * `Photo:ListShooting` and the shooting validation share this so the client can
+ * never shoot a scene the list would not offer.
+ */
+async function photoCatalog(playerId: string, exec: Executor) {
+  const [activities, musics, stages, expressions] = await Promise.all([
+    listPhotoActivities(),
+    listPhotoQuestMusics(),
+    listPhotoQuestStages(),
+    listPhotoExpressions(),
+  ]);
+  const evaluator = new ConditionEvaluator(playerId, Date.now(), exec);
+  const conditionIds = [...activities, ...musics, ...stages, ...expressions]
+    .flatMap((row) => [row.ViewConditionId, row.UnlockConditionId])
+    .filter((id): id is string => Boolean(id));
+  await evaluator.prime(conditionIds);
+  return {
+    activities: await filterPhotoRows(activities, evaluator),
+    musics: await filterPhotoRows(musics, evaluator),
+    stages: await filterPhotoRows(stages, evaluator),
+    expressions: await filterPhotoRows(expressions, evaluator),
+  };
+}
+
 /**
  * `Photo:ListShooting` — the shooting top page. Request is `Empty`.
- * Returns every selectable activity / quest music / quest stage / expression,
- * with unlock flags set to true (no condition engine exists yet).
+ * Returns the activities / quest musics / quest stages / expressions the player
+ * may currently see, with `IsUnlocked` from their master unlock conditions.
  */
 register(
   'Photo:ListShooting',
   async (ctx) => {
     const accountId = accountOf(ctx);
     return runPhoto(accountId, 'Photo:ListShooting', async (tx, playerId) => {
-      const activities = await listPhotoActivities();
+      const catalog = await photoCatalog(playerId, tx);
       const costumes = await listElements(playerId, 'Costumes', tx);
       const ownedCostumes = new Set(costumes.map((c) => String(c.CostumeId ?? '')));
-      const musics = await listPhotoQuestMusics();
-      const stages = await listPhotoQuestStages();
-      const expressions = await listPhotoExpressions();
       ctx.fastifyReq.log.info({ accountId, playerId }, 'photo list shooting');
       return {
         __msg: '',
-        Activities: dedupePoolPhotoActivities(activities, ownedCostumes).map((a) => ({
+        Activities: dedupePoolPhotoActivities(
+          catalog.activities.map((a) => ({ ...a, Id: a.id })),
+          ownedCostumes,
+        ).map((a) => ({
           __msg: 'Solis.Common.Proto.Api.PhotoActivity',
-          PhotoActivityId: a.Id,
-          IsUnlocked: true,
+          PhotoActivityId: a.id,
+          IsUnlocked: a.unlocked,
         } as Decoded)),
-        Musics: musics.map((m) => ({
+        Musics: catalog.musics.map((m) => ({
           __msg: 'Solis.Common.Proto.Api.PhotoMusic',
-          MusicId: m.Id,
-          IsUnlocked: true,
+          MusicId: m.id,
+          IsUnlocked: m.unlocked,
         } as Decoded)),
-        Stages: stages.map((s) => ({
+        Stages: catalog.stages.map((s) => ({
           __msg: 'Solis.Common.Proto.Api.PhotoStage',
-          StageId: s.Id,
-          IsUnlocked: true,
+          StageId: s.id,
+          IsUnlocked: s.unlocked,
         } as Decoded)),
-        Expressions: expressions.map((e) => ({
+        Expressions: catalog.expressions.map((e) => ({
           __msg: 'Solis.Common.Proto.Api.PhotoExpression',
-          PhotoExpressionId: e.Id,
-          IsUnlocked: true,
+          PhotoExpressionId: e.id,
+          IsUnlocked: e.unlocked,
         } as Decoded)),
         DokanInfo: {
           __msg: 'Solis.Common.Proto.Api.PhotoDokanInfo',

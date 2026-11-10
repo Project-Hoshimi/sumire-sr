@@ -1,4 +1,5 @@
 import { getConsumption } from '../master/index.ts';
+import { db } from '../db/client.ts';
 import { getCurrency, spendCurrency } from './currency.ts';
 import { getAccessoryAmount, getItemAmount, spendAccessory, spendItem } from './inventory.ts';
 import { type Executor } from '../db/tx.ts';
@@ -69,6 +70,18 @@ export async function consume(
   return out;
 }
 
+/**
+ * True when the consumption actually moved a stone balance (free or paid).
+ * Callers use this to attach `UpdatedData.Balance` to the response so the
+ * client learns the post-spend values instead of keeping a stale balance.
+ */
+export function consumptionSpendsStones(results: Decoded[]): boolean {
+  return results.some((r) => {
+    const type = Number(r.ResourceType ?? 0);
+    return type === RESOURCE_STONE || type === RESOURCE_PAID_STONE;
+  });
+}
+
 export function consumptionResult(
   type: number,
   resourceId: string,
@@ -116,4 +129,49 @@ export function consumptionUpdatedData(results: Decoded[]): Array<[string, unkno
   if (accessories.length) out.push(['Accessories', accessories]);
   if (points.length) out.push(['Points', points]);
   return out;
+}
+
+/** Identity field per `UpdatedData` collection produced by `consumptionUpdatedData`. */
+const UPDATE_KEY_FIELD: Record<string, string> = {
+  Items: 'ItemId',
+  Accessories: 'AccessoryId',
+  Points: 'PointType',
+};
+
+/**
+ * Merge the post-spend amounts of `consumptionResults` into an existing
+ * `UpdatedData` object, by identity key. Items are re-read from the store after
+ * the whole operation, so a resource that is both spent and granted by the same
+ * request (e.g. a ticket draw whose rewards also contain tickets) reports its
+ * true final amount instead of whichever list happened to be written last.
+ * Entries already present in `updated` (grants, other deltas) are kept and
+ * merged, so the caller can call this at the end of the handler.
+ */
+export async function mergeConsumptionUpdatedData(
+  playerId: string,
+  updated: Decoded,
+  results: Decoded[],
+  exec: Executor = db,
+): Promise<Decoded> {
+  for (const [field, value] of consumptionUpdatedData(results)) {
+    const keyField = UPDATE_KEY_FIELD[field];
+    const incoming = (value as Decoded[]) ?? [];
+    const merged = new Map<string, Decoded>();
+    for (const el of ((updated[field] as Decoded[] | undefined) ?? [])) {
+      merged.set(String(el[keyField]), el);
+    }
+    for (const el of incoming) {
+      const key = String(el[keyField]);
+      const amount =
+        field === 'Items' ? await getItemAmount(playerId, key, exec) : Number(el.Amount ?? 0);
+      const prev = merged.get(key);
+      merged.set(key, {
+        ...(prev ?? { __msg: el.__msg }),
+        [keyField]: el[keyField],
+        Amount: amount,
+      } as Decoded);
+    }
+    updated[field] = [...merged.values()];
+  }
+  return updated;
 }

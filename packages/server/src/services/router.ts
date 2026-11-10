@@ -1,3 +1,4 @@
+import { gunzipSync } from 'node:zlib';
 import type { FastifyRequest } from 'fastify';
 import { endpoints } from '@sumire-sr/protocol/gen/endpoints.ts';
 import { decodeMessage, encodeMessage, msgRegistry, Reader, Writer } from '@sumire-sr/protocol/runtime/proto.ts';
@@ -87,6 +88,10 @@ export async function dispatchRpc(name: string, plain: Buffer, req: FastifyReque
   }
 
   const reqShape = shapeFor(ep.request);
+  // The client gzips large request bodies (e.g. Gift:Receive with 61 ids,
+  // captures/2026-10-26_lesson_rate_official 00081). A gzip header can never
+  // start a protobuf message (0x1f is field 3 with the invalid wire type 7).
+  if (plain.length > 2 && plain[0] === 0x1f && plain[1] === 0x8b) plain = gunzipSync(plain);
   const request: Decoded | null = reqShape
     ? decodeMessage(reqShape, new Reader(Uint8Array.from(plain)))
     : null;
