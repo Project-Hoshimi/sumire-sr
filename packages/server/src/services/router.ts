@@ -40,6 +40,13 @@ const GUEST_ALLOWED = new Set([
   'Migration:Execute',
 ]);
 
+/**
+ * RPC names absent from the generated endpoint map that the client is known
+ * to call during boot. They are answered with an empty protobuf so they cannot
+ * wedge the client. Every other unmapped name gets the not-implemented error.
+ */
+export const TOLERATED_UNMAPPED_RPCS: ReadonlySet<string> = new Set(['User:Title']);
+
 const INVITE_ONLY_MESSAGE = message('inviteOnlyBlocked');
 
 /**
@@ -72,17 +79,16 @@ export async function dispatchRpc(name: string, plain: Buffer, req: FastifyReque
     throw new NotImplementedError(name);
   }
   if (!ep || !hasHandler(name)) {
-    if (!ep || config.unhandledRpc === 'empty') {
-      // Endpoints absent from the generated map are always tolerated with an
-      // empty protobuf (default message) so a phantom boot RPC such as
-      // `User:Title` cannot wedge the client; `empty` extends this to every
-      // known endpoint without a handler (legacy behaviour).
+    if (config.unhandledRpc === 'empty' || (!ep && TOLERATED_UNMAPPED_RPCS.has(name))) {
+      // `SUMIRE_UNHANDLED_RPC=empty` restores the legacy empty reply for every
+      // unhandled RPC. A tolerated unmapped name is a known boot RPC answered
+      // empty so it cannot wedge the client.
       req.log?.warn?.({ name, known: Boolean(ep) }, 'unhandled rpc — replying empty');
       return EMPTY;
     }
-    // The client must see the missing handler: an empty success body hides the
-    // failure, while gRPC 12 + FUNCTION_LOCKED shows a dialog and then returns
-    // the player to the home screen.
+    // Unmapped names get the not-implemented error unless listed in
+    // TOLERATED_UNMAPPED_RPCS: an empty success body hides the failure, while
+    // gRPC 12 + FUNCTION_LOCKED shows a dialog and returns to the home screen.
     req.log?.warn?.({ name, known: Boolean(ep) }, 'unhandled rpc — not implemented');
     throw new NotImplementedError(name);
   }
