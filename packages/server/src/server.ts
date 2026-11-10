@@ -12,7 +12,10 @@ import { publicKeyFingerprint } from './auth/jwt.ts';
 import { ensureTlsCert } from './tls.ts';
 import { registerFirebaseEmu } from './firebaseEmu.ts';
 import { registerFirebaseStorage } from './firebaseStorage.ts';
+import { registerNarrativePendingRoute } from './services/narrativePending.ts';
 import { registerInviteRoutes } from './routes/invites.ts';
+import { registerAssetMirror } from './assetMirror.ts';
+import { registerOctoStore } from './octoStore.ts'; // experimental, opt-in (SUMIRE_OCTO_DATABASE)
 import { MASTER_BLOBS_DIR } from './services/master.ts';
 import { isSandbox } from './profile.ts';
 import { isMainModule } from './mainModule.ts';
@@ -361,8 +364,14 @@ export function buildServer(): FastifyInstance {
   registerFirebaseEmu(app);
   // Firebase Storage emulation for photo image upload/download (Solis port).
   registerFirebaseStorage(app);
+  // Pending idol messages/calls for the mod's local notifications.
+  registerNarrativePendingRoute(app);
   // Invite pages and the token-guarded admin API (docs/LOGIN_FLOW.md).
   registerInviteRoutes(app);
+  // Local asset mirror of extracted final artifacts (docs/ASSET_MIRROR.md).
+  // Opt-in via SUMIRE_ASSET_MIRROR_DIR; separate from the `/v2/*` Octo proxy.
+  registerAssetMirror(app, config.assetMirrorDir);
+  registerOctoStore(app); // experimental, opt-in; unset leaves `/v2/*` proxying upstream
 
   app.all('/api/*', handler);
   app.all('/:service/:method', handler);

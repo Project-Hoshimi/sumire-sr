@@ -12,14 +12,18 @@ import {
   isFreshPlayer,
   listElements,
   putElements,
+  readPlayerBalance,
   replaceElements,
+  withPlayerIdentity,
 } from './playerState.ts';
 import { register } from './handlers.ts';
 import { applyBirthdayToHomeEnter, applyBirthdayToHomeLogin, birthdayLoginFields } from './birthday.ts';
 import { withPlayerTx } from '../db/tx.ts';
-import { hasReceivableGift } from './gift.ts';
+import { hasReceivableGift, postStarterGifts } from './gift.ts';
 import { accountOf, commonResponse, lessonHomeFields, playerForAccount, reconcileLessonState } from './activity.ts';
-import { activePromotionForHome } from './activityPromotion.ts';
+import { activePromotionForHome, promotionInfoForHome } from './activityPromotion.ts';
+import { fanEventInfoForHome, refreshInfoForHome } from './activityCatalog.ts';
+import { ConditionEvaluator } from './conditions.ts';
 import { isSandbox } from '../profile.ts';
 import { SANDBOX_HIERARCHY_DETAIL_GRADE_ID, SANDBOX_HIERARCHY_RANK } from '../profiles/sandbox/hierarchy.ts';
 import { db } from '../db/client.ts';
@@ -27,6 +31,7 @@ import { listGachas, master } from '../master/index.ts';
 import { isSandboxBlockedGacha } from '../profiles/sandbox/showcase.ts';
 import { sandboxEventStoryInfos } from '../profiles/sandbox/story.ts';
 import { sandboxHomeShelfInfo, sandboxShelfButton } from '../profiles/sandbox/shelf.ts';
+import { reconcileNarrative } from './narrative.ts';
 
 const LOVE_INFO_MSG = 'Solis.Common.Proto.Api.HomeLoveInfo';
 const EVENT_INFO_MSG = 'Solis.Common.Proto.Api.HomeEventInfo';
@@ -74,6 +79,22 @@ function setActiveSlots(body: any, activePromotion: unknown): void {
     else delete body.PromotionInfo.ActivePromotion;
   }
   if (body.RefreshInfo) delete body.RefreshInfo.ActiveRefresh;
+}
+
+/**
+ * Official profile: the captured `Home:Enter` carries the captured account's
+ * activity catalogs (including its finished promotion run), so give the player
+ * their own, reconciled from their condition progress. Sandbox keeps the
+ * captured catalogs and the `setActiveSlots` projection.
+ */
+async function applyPlayerActivityCatalogs(body: Decoded, playerId: string): Promise<void> {
+  await withPlayerTx(playerId, async (tx) => {
+    const now = Date.now();
+    const evaluator = new ConditionEvaluator(playerId, now, tx);
+    body.FanEventInfo = await fanEventInfoForHome(playerId, now, evaluator, tx);
+    body.PromotionInfo = await promotionInfoForHome(playerId, now, tx);
+    body.RefreshInfo = await refreshInfoForHome(playerId, now, evaluator, tx);
+  });
 }
 
 /**
@@ -146,8 +167,42 @@ function applySandboxHomeButtons(body: any): void {
   };
 }
 
+const COMMON_RESPONSE_MSG = 'Solis.Common.Proto.Api.CommonResponse';
+const DELETED_DATA_MSG = 'Solis.Common.Proto.Api.DeletedData';
+const NARRATIVE_COLLECTIONS = ['Messages', 'MessageSchedules', 'Telephones'] as const;
+
+/**
+ * Merge reconciled narrative collections into a Home:Enter response so the
+ * official client sees newly unlocked/scheduled idol messages and calls.
+ */
+function applyNarrative(body: Decoded, narrative: Decoded | null, replaceAll: boolean): void {
+  if (!narrative) return;
+  body.CommonResponse ??= {
+    __msg: COMMON_RESPONSE_MSG,
+    UpdatedData: { __msg: UPDATED_DATA_MSG },
+    DeletedData: { __msg: DELETED_DATA_MSG },
+  };
+  const common = body.CommonResponse as Decoded;
+  const updated = (common.UpdatedData ??= { __msg: UPDATED_DATA_MSG } as Decoded) as Decoded;
+  for (const key of NARRATIVE_COLLECTIONS) {
+    const value = narrative[key];
+    if (Array.isArray(value) && value.length > 0) updated[key] = value;
+    else if (replaceAll) delete updated[key];
+  }
+}
+
 register('Home:Enter', async (ctx) => {
   const pl = await findPlayerByAccountId(ctx.auth.ok ? ctx.auth.claims?.sub : undefined);
+  // The official server posts the new-account gift set on the first login.
+  // Starter gifts are official-game behaviour; the sandbox has its own profile.
+  if (pl && !isSandbox()) await withPlayerTx(pl.id, (tx) => postStarterGifts(tx, pl.id));
+  // Official profile only: unlock/schedule progress-driven idol messages and
+  // calls before the home screen is served. Sandbox keeps its pre-seeded state.
+  const narrative = pl && !isSandbox() ? ({ __msg: UPDATED_DATA_MSG } as Decoded) : null;
+  if (pl && narrative) {
+    await withPlayerTx(pl.id, (tx) => reconcileNarrative(pl.id, Date.now(), narrative, 'all', '', tx));
+  }
+
   const activity = pl
     ? await withPlayerTx(pl.id, async (tx) =>
         lessonHomeFields(await reconcileLessonState(pl.id, Date.now(), tx)),
@@ -182,10 +237,12 @@ register('Home:Enter', async (ctx) => {
       }
       body.HasReceivableGift = receivableGift === true;
       setActiveSlots(body, activePromotion);
+      if (pl && !isSandbox()) await applyPlayerActivityCatalogs(body, pl.id);
       await applySandboxEvents(body);
       applySandboxHomeButtons(body);
       await dropSandboxToyGachas(body);
       if (pl) await applyBirthdayToHomeEnter(body, pl.id);
+      applyNarrative(body, narrative, true);
       const w = new Writer();
       encodeMessage(HomeEnterResponse, body, w);
       return Buffer.from(w.toBytes());
@@ -204,6 +261,7 @@ register('Home:Enter', async (ctx) => {
       LoveInfo: loveInfo,
     };
     if (pl) await applyBirthdayToHomeEnter(body, pl.id);
+    applyNarrative(body, narrative, true);
     const w = new Writer();
     encodeMessage(HomeEnterResponse, body, w);
     return Buffer.from(w.toBytes());
@@ -216,10 +274,12 @@ register('Home:Enter', async (ctx) => {
   if (receivableGift !== null) decoded.HasReceivableGift = receivableGift;
   decoded.LoveInfo = loveInfo;
   setActiveSlots(decoded, activePromotion);
+  if (pl && !isSandbox()) await applyPlayerActivityCatalogs(decoded, pl.id);
   await applySandboxEvents(decoded);
   applySandboxHomeButtons(decoded);
   await dropSandboxToyGachas(decoded);
   if (pl) await applyBirthdayToHomeEnter(decoded, pl.id);
+  applyNarrative(decoded, narrative, false);
   const w = new Writer();
   encodeMessage(HomeEnterResponse, decoded, w);
   return Buffer.from(w.toBytes());
@@ -270,9 +330,19 @@ register('Home:Login', async (ctx) => {
 
   const decoded = decodeMessage(HomeLoginResponse, new Reader(Uint8Array.from(captured)));
   const user = await getSingleton(pl!.id, 'User');
-  if (user) decoded.CommonResponse.UpdatedData.User = user;
+  const capturedUser = decoded.CommonResponse?.UpdatedData?.User as Decoded | undefined;
+  if (capturedUser) {
+    // The stored User is authoritative once tutorial step 150 has promoted it;
+    // without one, keep the capture but never its official-account name.
+    decoded.CommonResponse.UpdatedData.User = withPlayerIdentity(user ?? capturedUser, user);
+  }
   if (pl) await applyBirthdayToHomeLogin(decoded, pl.id);
   dropSandboxLoginMissions(decoded);
+  // The stone balances come from the players columns (single source of truth),
+  // never from the captured account: a fresh player may have spent the stones
+  // the capture still shows.
+  const updated = decoded.CommonResponse?.UpdatedData as Decoded | undefined;
+  if (updated) updated.Balance = await readPlayerBalance(pl!.id);
   const w = new Writer();
   encodeMessage(HomeLoginResponse, decoded, w);
   return Buffer.from(w.toBytes());

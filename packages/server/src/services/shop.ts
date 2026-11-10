@@ -5,7 +5,8 @@ import { withPlayerTx } from '../db/tx.ts';
 import { players } from '../db/schema.ts';
 import { getCorpusResponses } from './replay/corpus.ts';
 import { applyRewardRefs } from '../master/reward.ts';
-import { consume } from './consumption.ts';
+import { consume, consumptionSpendsStones, mergeConsumptionUpdatedData } from './consumption.ts';
+import { attachPlayerBalance } from './playerState.ts';
 import { getPurchaseCount, incrementPurchase, listPurchaseCounts } from './purchases.ts';
 import { msgRegistry, decodeMessage, Reader } from '@sumire-sr/protocol/runtime/proto.ts';
 import type { Decoded } from '@sumire-sr/protocol/runtime/proto.ts';
@@ -111,8 +112,18 @@ register(
       const limit = Number(item.PurchaseLimit ?? 0);
       if (limit > 0 && purchased >= limit) throw new Error(`purchase limit reached ${shopItemId}`);
 
-      if (item.ConsumptionId) await consume(pl.id, item.ConsumptionId, 1, tx);
+      const consumptionResults = item.ConsumptionId
+        ? await consume(pl.id, item.ConsumptionId, 1, tx)
+        : [];
       const result = await applyRewardRefs(pl.id, [String(item.RewardId)], tx);
+      const updated = result.updated ?? ({ __msg: UPDATED_DATA_MSG } as Decoded);
+      // Echo the post-spend cost (items/accessories/gold), merged with the
+      // reward deltas so the client sees the final amounts.
+      await mergeConsumptionUpdatedData(pl.id, updated, consumptionResults, tx);
+      if (consumptionSpendsStones(consumptionResults)) {
+        await attachPlayerBalance(pl.id, updated, tx);
+      }
+      result.updated = updated;
       await incrementPurchase(pl.id, PURCHASE_KIND, shopItemId, tx);
       return result;
     });

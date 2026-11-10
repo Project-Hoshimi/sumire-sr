@@ -15,7 +15,14 @@ const freshCache = new Map<string, Buffer>();
 type CorpusEntry = { response: Buffer; request: Buffer | null };
 const corpus = new Map<string, CorpusEntry>();
 const allResponses = new Map<string, Buffer[]>();
-const METHOD_RE = /^(\d+)\.(req|resp)-plain\.([A-Za-z0-9]+):([A-Za-z0-9]+)\.bin$/;
+// `Service:Method` as captured. `:` cannot appear in an NTFS file name (Windows reads it as an
+// alternate data stream), so `Service@Method` is accepted as the portable spelling.
+const METHOD_RE = /^(\d+)\.(req|resp)-plain\.([A-Za-z0-9]+)[:@]([A-Za-z0-9]+)\.bin$/;
+
+/** The portable (`@`) spelling of a capture file name. */
+export function portableCaptureName(file: string): string {
+  return file.replace(/^(\d+\.(?:req|resp)-plain\.[A-Za-z0-9]+):/, '$1@');
+}
 
 function loadSession(dir: string) {
   let files: string[];
@@ -81,13 +88,16 @@ export function getCorpusResponses(name: string): Buffer[] {
 export function getFreshCapture(file: string): Buffer | null {
   const cached = freshCache.get(file);
   if (cached) return cached;
-  try {
-    const buf = readFileSync(join(CAPTURES, FRESH_CAPTURE, file));
-    freshCache.set(file, buf);
-    return buf;
-  } catch {
-    return null;
+  for (const name of new Set([file, portableCaptureName(file)])) {
+    try {
+      const buf = readFileSync(join(CAPTURES, FRESH_CAPTURE, name));
+      freshCache.set(file, buf);
+      return buf;
+    } catch {
+      // try the next spelling
+    }
   }
+  return null;
 }
 
 let freshFirstByName: Map<string, string> | null = null;

@@ -19,6 +19,8 @@ import {
   type MessageMaster,
 } from './messagePath.ts';
 import type { Decoded } from '@sumire-sr/protocol/runtime/proto.ts';
+import { isSandbox } from '../profile.ts';
+import { reconcileNarrative } from './narrative.ts';
 
 /**
  * In-game messages (chat threads) and the telephone calls embedded in their
@@ -510,8 +512,18 @@ export async function finishMessage(ctx: RpcContext): Promise<Decoded> {
         { __msg: USER_MESSAGE_SCHEDULE_MSG, MessageId: String(message.MessageId ?? '') },
       ];
     }
-    // TODO: Solis reconciles narrative schedules after a message finishes; this
-    // repo has no narrative scheduler.
+    // Official profile only: finishing a message can unlock the next idol
+    // message/call and schedule it. The sandbox keeps its pre-seeded state.
+    if (!isSandbox()) {
+      await reconcileNarrative(
+        pl.id,
+        finishedTime,
+        updated,
+        'finishedMessage',
+        String(message.MessageId ?? ''),
+        tx,
+      );
+    }
 
     return {
       __msg: '',

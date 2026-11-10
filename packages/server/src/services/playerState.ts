@@ -47,6 +47,77 @@ export function isFreshPlayer(player: Pick<PlayerRow, 'data'>): boolean {
   return (player.data as { seed?: string } | null)?.seed === FRESH_SEED;
 }
 
+const USER_BALANCE_MSG = 'Solis.Common.Proto.Transaction.UserBalance';
+
+/**
+ * The `players` columns (`free_jewel` / `paid_jewel`) are the single source of
+ * truth for a fresh account's stones. The stored `Balance` entity is only a
+ * projection of them: spending paths (gacha draws, consumption, exchanges) move
+ * the columns without emitting an `UpdatedData.Balance`, so the entity can lag
+ * behind. Every Balance served to or persisted for a fresh player goes through
+ * `readPlayerBalance` / `applyUpdatedData`'s rewrite instead of trusting the
+ * store.
+ */
+export function balanceFromColumns(row: { freeJewel: number; paidJewel: number | null }): Decoded {
+  return {
+    __msg: USER_BALANCE_MSG,
+    FreeBalance: Number(row.freeJewel ?? 0),
+    PaidBalance: Number(row.paidJewel ?? 0),
+  } as Decoded;
+}
+
+/** Read a player's `UserBalance` slice from the authoritative columns. */
+export async function readPlayerBalance(playerId: string, exec: Executor = db): Promise<Decoded> {
+  const [row] = await exec
+    .select({ freeJewel: players.freeJewel, paidJewel: players.paidJewel })
+    .from(players)
+    .where(eq(players.id, playerId))
+    .limit(1);
+  return balanceFromColumns(row ?? { freeJewel: 0, paidJewel: 0 });
+}
+
+/**
+ * Attach the post-operation `UserBalance` to a response's `UpdatedData` and
+ * persist the same slice, so the stored entity never lags the columns. Spending
+ * RPCs that own their state (gacha, market, shop, …) must call this after the
+ * spend; otherwise the client keeps showing the pre-spend amount.
+ */
+export async function attachPlayerBalance(
+  playerId: string,
+  updated: Decoded,
+  exec: Executor = db,
+): Promise<Decoded> {
+  const balance = await readPlayerBalance(playerId, exec);
+  updated.Balance = balance;
+  await putSingleton(playerId, 'Balance', balance, exec);
+  return balance;
+}
+
+/** True when a Balance slice already carries exactly the given values. */
+export function balanceMatches(balance: Decoded | null | undefined, columns: Decoded): boolean {
+  if (!balance) return false;
+  return (
+    Number(balance.FreeBalance ?? 0) === Number(columns.FreeBalance ?? 0) &&
+    Number(balance.PaidBalance ?? 0) === Number(columns.PaidBalance ?? 0)
+  );
+}
+
+/**
+ * Copy the player's own identity onto a captured `User` before it is returned
+ * or persisted. The official fresh-account captures belong to the "Numbers"
+ * account, so replaying them verbatim would leak its name into the client and
+ * overwrite the stored `Name`. When the player has no name yet, keep the empty
+ * value rather than falling back to the captured one.
+ */
+export function withPlayerIdentity(captured: Decoded, current: Decoded | null): Decoded {
+  const user = { ...captured } as Decoded;
+  user.Name = typeof current?.Name === 'string' ? current.Name : '';
+  for (const k of ['GameStartTime', 'LastLoginTime'] as const) {
+    if (current?.[k] != null) user[k] = current[k];
+  }
+  return user;
+}
+
 /** The player row owned by an authenticated account, if any. */
 export async function findPlayerByAccountId(accountId: string | undefined): Promise<PlayerRow | undefined> {
   if (!accountId) return undefined;
@@ -401,6 +472,17 @@ export async function applyUpdatedData(
   const specs = new Map(fieldSpecs().map((s) => [s.field, s]));
 
   if (updated) {
+    // Fresh accounts: the player columns own the stone balances, so a Balance
+    // arriving from a captured payload must never overwrite them (or be stored
+    // as-is). Rewrite the slice from the columns before persisting.
+    if (updated.Balance) {
+      const [row] = await exec
+        .select({ data: players.data, freeJewel: players.freeJewel, paidJewel: players.paidJewel })
+        .from(players)
+        .where(eq(players.id, playerId))
+        .limit(1);
+      if (row && isFreshPlayer(row)) updated.Balance = balanceFromColumns(row);
+    }
     await applyScalars(playerId, updated, exec);
     for (const spec of specs.values()) {
       const v = updated[spec.field];

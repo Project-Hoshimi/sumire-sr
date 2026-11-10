@@ -221,7 +221,8 @@ function log(msg) {
 const MOD_NAME = 'libil2cpp.so';
 // libil2cpp RVAs move between builds: HOOKS `off` is 6.0.2 (phase3d/dump),
 // `off603` is 6.0.3 (phase3d_603/dump_net). Set this to the installed versionName.
-const GAME_VERSION = '6.0.3';
+// `off610` is 6.1.0, mapped from 6.0.3 by masked arm64 signature matching. Not yet tested on a device.
+const GAME_VERSION = '6.1.0';
 const TRACE = {
   signature: true,
   requests: true,
@@ -367,31 +368,32 @@ function readDictStringString(dict, capLocal = 8) {
  * Hook table
  * ------------------------------------------------------------------------- */
 const HOOKS = [
-  { off: 0x6dc9aec, off603: 0x6dca47c, name: 'ApiBase.CreateRequestSignature', tag: 'signature' },
-  { off: 0x5ab69ac, off603: 0x5ab733c, name: 'ApiBase.ExecuteAsync', tag: 'requests' },
-  { off: 0x5ab658c, off603: 0x5ab6f1c, name: 'ApiBase.ExecuteApiAsync', tag: 'requests' },
-  { off: 0x5ab5b48, off603: 0x5ab64d8, name: 'ApiBase.CreateHeader', tag: 'requests' },
-  { off: 0x6dc9a6c, off603: 0x6dca3fc, name: 'ApiBase.CreateRequestId', tag: 'requests' },
-  { off: 0x6dc9dc4, off603: 0x6dca754, name: 'ApiBase.GetUnixTimestamp', tag: 'requests' },
-  { off: 0x8799358, off603: 0x8799ce8, name: 'MarshallerFactory.Encrypt', tag: 'encrypt' },
-  { off: 0x8799404, off603: 0x8799d94, name: 'MarshallerFactory.Decrypt', tag: 'decrypt' },
-  { off: 0x87994d0, off603: 0x8799e60, name: 'MarshallerFactory.CreateAesIV', tag: 'iv' },
-  { off: 0x8799704, off603: 0x879a094, name: 'MarshallerFactory.CompressBuffer', tag: 'compress' },
-  { off: 0x8799a3c, off603: 0x879a3cc, name: 'MarshallerFactory.DecompressBuffer', tag: 'compress' },
-  { off: 0x8799da0, off603: 0x879a730, name: 'MarshallerFactory.MD5Hash', tag: 'md5' },
-  { off: 0x8799370, off603: 0x8799d00, name: 'Crypto.Aes.Encrypt', tag: 'aeslow' },
-  { off: 0x8799424, off603: 0x8799db4, name: 'Crypto.Aes.Decrypt', tag: 'aeslow' },
-  { off: 0x50409c0, off603: 0x5041350, name: 'Solis.AES.Encrypt', tag: 'aeslow' },
-  { off: 0x5040b00, off603: 0x5041490, name: 'Solis.AES.Decrypt', tag: 'aeslow' },
-  { off: 0x8798d58, off603: 0x87996e8, name: 'CustomHttpMessageHandler.SendAsync', tag: 'http' },
-  { off: 0x46EA260, off603: 0x46eabf0, name: 'Api.CreateCustomHeader', tag: 'headers' },
-  { off: 0x5ab6aa8, off603: 0x5ab7438, name: 'ApiBase.ExecuteAsync<fsg>', tag: 'requests' },
-  { off: 0x5ab6684, off603: 0x5ab7014, name: 'ApiBase.ExecuteApiAsync<fsg>', tag: 'requests' },
-  { off: 0x5ab6008, off603: 0x5ab6998, name: 'ApiBase.CreateHeader<fsg>', tag: 'requests' },
-  { off: 0x845db34, off603: 0x845e4c4, name: 'Grpc.Metadata.Add', tag: 'headers' },
-  { off: 0x845dd6c, off603: 0x845e6fc, name: 'Grpc.Metadata.Add2', tag: 'headers' }
+  { off: 0x6dc9aec, off603: 0x6dca47c, off610: 0x6dde36c, name: 'ApiBase.CreateRequestSignature', tag: 'signature' },
+  { off: 0x5ab69ac, off603: 0x5ab733c, off610: 0x5ac9eb8, name: 'ApiBase.ExecuteAsync', tag: 'requests' },
+  { off: 0x5ab658c, off603: 0x5ab6f1c, off610: 0x5ac9a98, name: 'ApiBase.ExecuteApiAsync', tag: 'requests' },
+  { off: 0x5ab5b48, off603: 0x5ab64d8, off610: 0x5ac9054, name: 'ApiBase.CreateHeader', tag: 'requests' },
+  { off: 0x6dc9a6c, off603: 0x6dca3fc, off610: 0x6dde2ec, name: 'ApiBase.CreateRequestId', tag: 'requests' },
+  { off: 0x6dc9dc4, off603: 0x6dca754, off610: 0x6dde644, name: 'ApiBase.GetUnixTimestamp', tag: 'requests' },
+  { off: 0x8799358, off603: 0x8799ce8, off610: 0x87b0644, name: 'MarshallerFactory.Encrypt', tag: 'encrypt' },
+  { off: 0x8799404, off603: 0x8799d94, off610: 0x87b06f0, name: 'MarshallerFactory.Decrypt', tag: 'decrypt' },
+  { off: 0x87994d0, off603: 0x8799e60, off610: 0x87b07bc, name: 'MarshallerFactory.CreateAesIV', tag: 'iv' },
+  { off: 0x8799704, off603: 0x879a094, off610: 0x87b09f0, name: 'MarshallerFactory.CompressBuffer', tag: 'compress' },
+  { off: 0x8799a3c, off603: 0x879a3cc, off610: 0x87b0d28, name: 'MarshallerFactory.DecompressBuffer', tag: 'compress' },
+  { off: 0x8799da0, off603: 0x879a730, off610: 0x87b108c, name: 'MarshallerFactory.MD5Hash', tag: 'md5' },
+  { off: 0x8799370, off603: 0x8799d00, off610: 0x87b065c, name: 'Crypto.Aes.Encrypt', tag: 'aeslow' },
+  { off: 0x8799424, off603: 0x8799db4, off610: 0x87b0710, name: 'Crypto.Aes.Decrypt', tag: 'aeslow' },
+  { off: 0x50409c0, off603: 0x5041350, off610: 0x504e410, name: 'Solis.AES.Encrypt', tag: 'aeslow' },
+  { off: 0x5040b00, off603: 0x5041490, off610: 0x504e550, name: 'Solis.AES.Decrypt', tag: 'aeslow' },
+  { off: 0x8798d58, off603: 0x87996e8, off610: 0x87b0044, name: 'CustomHttpMessageHandler.SendAsync', tag: 'http' },
+  { off: 0x46EA260, off603: 0x46eabf0, off610: 0x46f4c24, name: 'Api.CreateCustomHeader', tag: 'headers' },
+  { off: 0x5ab6aa8, off603: 0x5ab7438, off610: 0x5ac9fb4, name: 'ApiBase.ExecuteAsync<fsg>', tag: 'requests' },
+  { off: 0x5ab6684, off603: 0x5ab7014, off610: 0x5ac9b90, name: 'ApiBase.ExecuteApiAsync<fsg>', tag: 'requests' },
+  { off: 0x5ab6008, off603: 0x5ab6998, off610: 0x5ac9514, name: 'ApiBase.CreateHeader<fsg>', tag: 'requests' },
+  { off: 0x845db34, off603: 0x845e4c4, off610: 0x8474e20, name: 'Grpc.Metadata.Add', tag: 'headers' },
+  { off: 0x845dd6c, off603: 0x845e6fc, off610: 0x8475058, name: 'Grpc.Metadata.Add2', tag: 'headers' }
 ];
 if (GAME_VERSION === '6.0.3') for (const h of HOOKS) h.off = h.off603;
+if (GAME_VERSION === '6.1.0') for (const h of HOOKS) h.off = h.off610;
 
 function installPass() {
   const mod = Process.enumerateModules().find(m => m.name === MOD_NAME);

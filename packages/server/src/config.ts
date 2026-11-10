@@ -37,6 +37,9 @@ export const config = {
   // Root for server-stored resources (Solis `config.GetResourceDir()`); uploaded
   // photo images live under `<resourceDir>/Photo/<publicUserId>/<file>.jpg`.
   resourceDir: resolve(import.meta.dirname, '..', process.env.RESOURCE_DIR ?? 'data'),
+  // Local asset mirror (docs/ASSET_MIRROR.md): directory of already-extracted
+  // final artifacts served at `GET /assets/*`. Empty (unset) disables the route.
+  assetMirrorDir: process.env.SUMIRE_ASSET_MIRROR_DIR ? resolve(process.env.SUMIRE_ASSET_MIRROR_DIR) : '',
 };
 
 export function hasJwtKeys(): boolean {

@@ -28,6 +28,7 @@ import './company.ts';
 import './love.ts';
 import './activity.ts';
 import './activityPromotion.ts';
+import './quest.ts';
 import './birthday.ts';
 import './replay/index.ts';
 import { registerReplayHandlers } from './replay/index.ts';

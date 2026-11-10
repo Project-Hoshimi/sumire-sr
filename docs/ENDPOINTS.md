@@ -21,7 +21,7 @@ Do not edit by hand.
 | Activity | LoadFanEvent | missing |
 | Activity | LoadPromotion | implemented |
 | Activity | LoadRefresh | missing |
-| Activity | PromoteLesson | missing |
+| Activity | PromoteLesson | implemented |
 | Activity | ReceiveLessonReward | implemented |
 | Activity | ReceivePromotionReward | implemented |
 | Activity | SaveFanEvent | missing |
@@ -155,7 +155,7 @@ Do not edit by hand.
 | Gacha | ReceiveFreePremiumGachaTicket | implemented |
 | Gacha | SelectCard | implemented |
 | Gift | List | implemented |
-| Gift | ListHistory | missing |
+| Gift | ListHistory | implemented |
 | Gift | Receive | implemented |
 | Gpp | ReceiveReward | missing |
 | Guild | Join | missing |
@@ -261,7 +261,7 @@ Do not edit by hand.
 | Mission | Event | missing |
 | Mission | List | missing |
 | Mission | Receive | implemented |
-| Mission | URLTransition | missing |
+| Mission | URLTransition | implemented |
 | Mosaic | Exchange | missing |
 | Mosaic | ReceiveTotalConsumptionReward | missing |
 | Mosaic | Top | missing |
@@ -321,20 +321,20 @@ Do not edit by hand.
 | Pvp | ListRanking | missing |
 | Pvp | Start | missing |
 | Pvp | Top | missing |
-| Quest | GetLatestClearLiveResult | missing |
+| Quest | GetLatestClearLiveResult | implemented |
 | Quest | GetRankingLiveResult | missing |
-| Quest | ListAsset | missing |
+| Quest | ListAsset | implemented |
 | Quest | ListContest | missing |
 | Quest | ListContestRanking | missing |
 | Quest | ListDaily | missing |
-| Quest | ListLatestClear | missing |
-| Quest | ListMain | missing |
+| Quest | ListLatestClear | implemented |
+| Quest | ListMain | implemented |
 | Quest | ListTower | missing |
 | Quest | ListTowerRanking | missing |
 | Quest | OutputLiveResultDetailLog | missing |
-| Quest | Start | missing |
+| Quest | Start | implemented |
 | Quest | StartBulkDaily | missing |
-| Quest | Top | missing |
+| Quest | Top | implemented |
 | Quest | TowerTop | missing |
 | Race | EnhanceLiveBonus | missing |
 | Race | ListDeck | missing |
@@ -435,4 +435,4 @@ Do not edit by hand.
 | User | ProvideExternalReward | missing |
 | Warning | SetDisplayed | missing |
 
-**Totals:** 425 endpoints — 197 implemented, 228 missing.
+**Totals:** 425 endpoints — 206 implemented, 219 missing.

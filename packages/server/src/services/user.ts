@@ -5,11 +5,14 @@ import { decodeMessage, msgRegistry, Reader } from '@sumire-sr/protocol/runtime/
 import type { Decoded } from '@sumire-sr/protocol/runtime/proto.ts';
 import { db } from '../db/client.ts';
 import {
+  balanceMatches,
   findPlayerByAccountId,
   isFreshPlayer,
   loadOrSeed,
   putElements,
   listElements,
+  putSingleton,
+  readPlayerBalance,
   replaceElements,
 } from './playerState.ts';
 import { resolveIdolSlot } from './home.ts';
@@ -18,10 +21,14 @@ import { syncCardRelease } from './cardRelease.ts';
 import { missingCardCosmetics } from './cardCosmetics.ts';
 import { applyGrants } from '../master/reward.ts';
 import { isSandbox } from '../profile.ts';
+import { withPlayerTx } from '../db/tx.ts';
+import { reconcileNarrative } from './narrative.ts';
 import { SANDBOX_HIERARCHY_DETAIL_GRADE_ID, SANDBOX_HIERARCHY_POINT } from '../profiles/sandbox/hierarchy.ts';
 import { sandboxUserCompany } from '../profiles/sandbox/company.ts';
+import { managerLevel, unlockManagerLevelPhotoAbilities } from './photoGen.ts';
 
 const RESPONSE_MSG = 'Solis.Common.Proto.Api.UserGetResponse';
+const UPDATED_DATA_MSG = 'Solis.Common.Proto.Api.UpdatedData';
 const USER_PUBLIC_MSG = 'Solis.Common.Proto.Transaction.UserPublic';
 const USER_AREA_MSG = 'Solis.Common.Proto.Transaction.UserArea';
 const FRESH_USER_GET = '00005.resp-plain.User:Get.bin';
@@ -86,6 +93,17 @@ register('User:Get', async (ctx) => {
   for (const [field, val] of Object.entries(collections)) out[field] = val;
   for (const [field, val] of Object.entries(singletons)) out[field] = val;
 
+  // Official profile only: reconcile progress-driven idol message/call unlocks
+  // and re-read the narrative collections the reconciler may have written.
+  if (!isSandbox()) {
+    await withPlayerTx(pl.id, async (tx) => {
+      await reconcileNarrative(pl.id, Date.now(), { __msg: UPDATED_DATA_MSG } as Decoded, 'all', '', tx);
+      out.Messages = (await listElements(pl.id, 'Messages', tx)) as unknown as Decoded;
+      out.MessageSchedules = (await listElements(pl.id, 'MessageSchedules', tx)) as unknown as Decoded;
+      out.Telephones = (await listElements(pl.id, 'Telephones', tx)) as unknown as Decoded;
+    });
+  }
+
   // Slot 4 (Idol) must always be present: the client fills Satomi's side spot
   // from it and hangs on the lobby load when it is missing. Master data no
   // longer pins a character, so derive the row from the placed idols and own
@@ -105,6 +123,14 @@ register('User:Get', async (ctx) => {
   if (storedIdols.length !== 1 || String(storedIdols[0].CharacterId ?? '') !== String(idolSlot.CharacterId)) {
     await replaceElements(pl.id, 'HomePositions', servedPositions, db);
   }
+  // Solis unlocks level-80 dedicated photo abilities before serving photos,
+  // catching up anything the manager-level-up path missed.
+  await withPlayerTx(pl.id, async (tx) => {
+    if ((await unlockManagerLevelPhotoAbilities(pl.id, await managerLevel(pl.id, tx), tx)).length) {
+      out.Photos = (await listElements(pl.id, 'Photos', tx)) as unknown as Decoded;
+    }
+  });
+
 
   // These overrides exist to keep the captured veteran account playable. Fresh
   // accounts own their persisted state, so none of them apply.
@@ -186,6 +212,21 @@ register('User:Get', async (ctx) => {
         if (p.PointType === POINT_GOLD) p.Amount = pl.gold;
         else if (p.PointType === POINT_STAMINA) p.Amount = pl.stamina;
       }
+    }
+  }
+
+  // The `players` columns are the single source of truth for stone balances.
+  // A fresh account's stored Balance entity can lag behind them (gacha draws and
+  // other spends move only the columns), so serve — and heal the store to — the
+  // columns values instead of the persisted slice.
+  if (fresh) {
+    const balance = await readPlayerBalance(pl.id);
+    const stored = out.Balance as Decoded | undefined;
+    if (!balanceMatches(stored, balance)) {
+      out.Balance = stored
+        ? ({ ...stored, FreeBalance: balance.FreeBalance, PaidBalance: balance.PaidBalance } as Decoded)
+        : balance;
+      await putSingleton(pl.id, 'Balance', out.Balance as Decoded);
     }
   }
 

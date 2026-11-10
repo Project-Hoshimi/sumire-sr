@@ -96,4 +96,4 @@ Still open:
 - `Activity:ReceiveLessonReward` (collecting the home-screen lesson reward) is unhandled; the empty reply throws a NullReferenceException in `ActivityLessonProgressWrapper`. `Migration:List` is also unhandled (harmless so far).
 - Existing account A (real Google session) on a redirected client: see §4. Not tested.
 - `Auth:Login` still trusts `user_id` without verifying the signature. Verify our own ID tokens before any public exposure.
-- Rate limiting and an invite gate on `Auth:Create` (`SOLIS_INTEROP.md` §4.1).
+- Rate limiting and an invite gate on `Auth:Create` (`SOLIS_INTEROP.md` §4.1). Planned as admin-issued accounts: the server admin issues accounts and the server stops auto-creating them (`SESSION_STATE.md` NEXT list).

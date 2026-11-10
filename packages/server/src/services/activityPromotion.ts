@@ -9,6 +9,7 @@ import {
   getItem,
   getReward,
   getSetting,
+  listActivityPromotions,
 } from '../master/index.ts';
 import type { Decoded } from '@sumire-sr/protocol/runtime/proto.ts';
 import {
@@ -26,6 +27,8 @@ import {
 } from './activity.ts';
 import { getItemAmount, spendItem } from './inventory.ts';
 import { getSingleton, listElements, putElements, putSingleton } from './playerState.ts';
+import { ConditionEvaluator } from './conditions.ts';
+import { reconcileLevelledCatalog } from './activityCatalog.ts';
 
 /**
  * Activity (timed idol activity) — promotion port.
@@ -47,11 +50,14 @@ const ACTIVITY_LEVEL_PROGRESS_MSG = 'Solis.Common.Proto.Api.ActivityLevelProgres
 const ACTIVITY_LEVEL_INFO_MSG = 'Solis.Common.Proto.Api.ActivityLevelInfo';
 const ACTIVITY_PROMOTION_REWARD_MSG = 'Solis.Common.Proto.Api.ActivityPromotionReward';
 const ACTIVE_PROMOTION_MSG = 'Solis.Common.Proto.Api.ActivePromotion';
+const PROMOTION_MSG = 'Solis.Common.Proto.Api.Promotion';
+const PROMOTION_INFO_MSG = 'Solis.Common.Proto.Api.PromotionInfo';
 const REWARD_MSG = 'Solis.Common.Proto.Transaction.Reward';
 
 const EFFECT_PROMOTION_CARD_ENHANCE_ITEM_UP = 2001;
 const EFFECT_PROMOTION_GOLD_UP = 2002;
 const EFFECT_PROMOTION_FAN_UP = 2004;
+const PROMOTION_FINISH_EFFECT_END = 4_124_271_599_000;
 
 const LINEUP_SIZE = 3;
 const MULTI_STEP_INTERVAL = 20;
@@ -930,13 +936,8 @@ register(
   { ownsState: true },
 );
 
-/**
- * The home screen's Promotion slot (`Home:Enter` PromotionInfo.ActivePromotion)
- * for the player's own run, or null when no promotion is running.
- */
-async function activePromotionForHome(playerId: string, exec: Executor): Promise<Decoded | null> {
-  const run = (await loadState(playerId, exec)).Run;
-  if (!run) return null;
+/** The `ActivePromotion` message for a run (shared by Home:Enter paths). */
+function activePromotionMessage(run: PromotionRun): Decoded {
   return {
     __msg: ACTIVE_PROMOTION_MSG,
     CharacterIds: run.Characters.map((c) => c.CharacterId),
@@ -946,6 +947,87 @@ async function activePromotionForHome(playerId: string, exec: Executor): Promise
     FinishTime: run.FinishTime,
     CampaignEffects: run.CampaignEffects,
   } as Decoded;
+}
+
+/**
+ * The home screen's Promotion slot (`Home:Enter` PromotionInfo.ActivePromotion)
+ * for the player's own run, or null when no promotion is running.
+ */
+async function activePromotionForHome(playerId: string, exec: Executor): Promise<Decoded | null> {
+  const run = (await loadState(playerId, exec)).Run;
+  if (!run) return null;
+  return activePromotionMessage(run);
+}
+
+/** One `PromotionInfo.Promotions` entry built from a master promotion row. */
+function promotionCatalogEntry(
+  row: Awaited<ReturnType<typeof listActivityPromotions>>[number],
+): Decoded {
+  return {
+    __msg: PROMOTION_MSG,
+    Id: String(row.Id ?? ''),
+    Name: String(row.Name ?? ''),
+    SubName: highestPromotionLevelName(row.Levels),
+    UnlockConditionId: String(row.UnlockConditionId ?? ''),
+    IsUnlocked: false,
+    ActivityPerformanceId: String(row.ActivityPerformanceId ?? ''),
+    Level: Number(row.PromotionLevel ?? 1),
+    Exp: 0,
+    NextLevelRequiredExp: 0,
+    RequiredStamina: Number(row.RequiredStamina ?? 0),
+    NextLevelUnlockConditionId: '',
+    IsNextLevelUnlocked: false,
+    StepConsumptionStamina: Number(row.StepConsumptionStamina ?? 0),
+    StepRewardGold: Number(row.StepRewardGold ?? 0),
+    StepRewardCardEnhanceItem: Number(row.StepRewardCardEnhanceItem ?? 0),
+    StepAdditionalRewardId: '',
+    MultiStepRewardId: String(row.MultiStepRewardId ?? ''),
+    MaxFanAmount: Number(row.MaxFanAmount ?? 0),
+    ViewConditionId: String(row.ViewConditionId ?? ''),
+    SubGenre: String(row.SubGenre ?? ''),
+    MultiStepCampaignDropRewardIds: [],
+  } as Decoded;
+}
+
+/**
+ * Home:Enter's PromotionInfo for one player (official profile).
+ *
+ * Adapts T's `promotionInfoForHome` to this branch's master-driven promotion
+ * model: the catalog is rebuilt from `master_activity_promotion` (main stores no
+ * `Info` catalog), progress Exp comes from the stored `Promotions`, and unlock
+ * flags are reconciled from the player's condition progress each call. The
+ * player's active run is exposed as `ActivePromotion` (same message that
+ * `activePromotionForHome` produces) and hides the catalog, mirroring
+ * `activityPromotionInfoForResponse`.
+ */
+export async function promotionInfoForHome(
+  playerId: string,
+  now: number,
+  exec: Executor,
+): Promise<Decoded> {
+  const state = await loadState(playerId, exec);
+  const rows = [...(await listActivityPromotions())].sort(
+    (a, b) => Number(a.Order ?? 0) - Number(b.Order ?? 0) || String(a.Id).localeCompare(String(b.Id)),
+  );
+  const promotions = rows.map(promotionCatalogEntry);
+  for (const promotion of promotions) {
+    promotion.Exp = promotionExp(state, String(promotion.Id ?? ''));
+  }
+  const info = {
+    __msg: PROMOTION_INFO_MSG,
+    Promotions: promotions,
+    CampaignEffects: effectsMessage([
+      { Type: EFFECT_PROMOTION_CARD_ENHANCE_ITEM_UP, Value: 1000, EndTime: PROMOTION_FINISH_EFFECT_END },
+    ]),
+  } as Decoded;
+  const evaluator = new ConditionEvaluator(playerId, now, exec);
+  await reconcileLevelledCatalog(info, promotions, now, evaluator);
+  const projected = structuredClone(info) as Decoded;
+  if (state.Run) {
+    projected.ActivePromotion = activePromotionMessage(state.Run);
+    projected.Promotions = [];
+  }
+  return projected;
 }
 
 export { activePromotionForHome, findPerformanceForPromotion };

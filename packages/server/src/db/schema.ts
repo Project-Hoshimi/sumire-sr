@@ -227,6 +227,12 @@ export const playerLessonProgress = pgTable(
     rewardGold: integer('reward_gold').default(0).notNull(),
     rewardManagerExp: integer('reward_manager_exp').default(0).notNull(),
     rewardCardEnhanceItem: integer('reward_card_enhance_item').default(0).notNull(),
+    // Steps already settled at an earlier area's rate (between lastReceiveTime and
+    // rateAnchorTime); later steps accrue at the current step rates.
+    bankedRewardGold: integer('banked_reward_gold').default(0).notNull(),
+    bankedRewardManagerExp: integer('banked_reward_manager_exp').default(0).notNull(),
+    bankedRewardCardEnhanceItem: integer('banked_reward_card_enhance_item').default(0).notNull(),
+    rateAnchorTime: bigint('rate_anchor_time', { mode: 'number' }).default(0).notNull(),
     lastReceiveTime: bigint('last_receive_time', { mode: 'number' }).default(0).notNull(),
     maxRewardTime: bigint('max_reward_time', { mode: 'number' }).default(0).notNull(),
     dailyPromoteCount: integer('daily_promote_count').default(0).notNull(),

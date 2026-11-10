@@ -362,7 +362,13 @@ export const masterAccessory = pgTable(
     Name: text('Name'),
     CategoryType: bigint('CategoryType', { mode: 'number' }),
     Param1Type: bigint('Param1Type', { mode: 'number' }),
+    Param1Permil: bigint('Param1Permil', { mode: 'number' }),
     Param1Value: bigint('Param1Value', { mode: 'number' }),
+    Param2Type: bigint('Param2Type', { mode: 'number' }),
+    Param2Permil: bigint('Param2Permil', { mode: 'number' }),
+    Param2Value: bigint('Param2Value', { mode: 'number' }),
+    CharacterId: text('CharacterId'),
+    CharacterGroupId: text('CharacterGroupId'),
     SalePrice: bigint('SalePrice', { mode: 'number' }),
   },
   (t) => [uniqueIndex('master_accessory_id_idx').on(t.Id)],
@@ -471,6 +477,12 @@ export const masterPhotoAbility = pgTable(
     Name: text('Name'),
     Description: text('Description'),
     AbilityType: bigint('AbilityType', { mode: 'number' }),
+    MoodType: bigint('MoodType', { mode: 'number' }),
+    SkillId: text('SkillId'),
+    AbilityTargetId: text('AbilityTargetId'),
+    ConditionCardType: bigint('ConditionCardType', { mode: 'number' }),
+    ConditionLiveType: bigint('ConditionLiveType', { mode: 'number' }),
+    StatusEffectType: bigint('StatusEffectType', { mode: 'number' }),
     PhotoAbilityLevels: jsonb('PhotoAbilityLevels'),
     PhotoAbilityGrades: jsonb('PhotoAbilityGrades'),
   },
@@ -537,10 +549,18 @@ export const masterStage = pgTable(
   'master_Stage',
   {
     Id: text('Id').notNull(),
-    AssetId: text('AssetId'),
-    Name: text('Name'),
-    Order: bigint('Order', { mode: 'number' }),
     Type: bigint('Type', { mode: 'number' }),
+    AssetId: text('AssetId'),
+    ThumbnailAssetId: text('ThumbnailAssetId'),
+    Name: text('Name'),
+    Description: text('Description'),
+    Order: bigint('Order', { mode: 'number' }),
+    TimeDifference: text('TimeDifference'),
+    IsHideWithPhotoShooting: boolean('IsHideWithPhotoShooting'),
+    OverrideAssetVariationId: text('OverrideAssetVariationId'),
+    AdditionalAssetIds: jsonb('AdditionalAssetIds'),
+    CameraPositions: jsonb('CameraPositions'),
+    OpeningAssetId: text('OpeningAssetId'),
   },
   (t) => [uniqueIndex('master_stage_id_idx').on(t.Id)],
 );
@@ -919,6 +939,7 @@ export const masterSetting = pgTable(
     CardStaminaBarMax: bigint('CardStaminaBarMax', { mode: 'number' }),
     SecondsPerActivityLessonStep: bigint('SecondsPerActivityLessonStep', { mode: 'number' }),
     SecondsPerActivityPromotionStep: bigint('SecondsPerActivityPromotionStep', { mode: 'number' }),
+    ActivityPromotionFetchStepsSize: bigint('ActivityPromotionFetchStepsSize', { mode: 'number' }),
     CharacterSecondToRecover: bigint('CharacterSecondToRecover', { mode: 'number' }),
     LiveLightFanAmountWeightPermil: bigint('LiveLightFanAmountWeightPermil', { mode: 'number' }),
     LiveMiddleFanAmountWeightPermil: bigint('LiveMiddleFanAmountWeightPermil', { mode: 'number' }),
@@ -933,6 +954,15 @@ export const masterSetting = pgTable(
     ActivityLessonPromoteFreeLimitCount: bigint('ActivityLessonPromoteFreeLimitCount', {
       mode: 'number',
     }),
+    LiveMinimumGuaranteedAudienceAmount: bigint('LiveMinimumGuaranteedAudienceAmount', { mode: 'number' }),
+    LiveMaxParameterBonusPermil: bigint('LiveMaxParameterBonusPermil', { mode: 'number' }),
+    StatusEffectTypeStrengthList: jsonb('StatusEffectTypeStrengthList'),
+    StatusEffectTypeWeaknessDownList: jsonb('StatusEffectTypeWeaknessDownList'),
+    StatusEffectTypeWeaknessOtherList: jsonb('StatusEffectTypeWeaknessOtherList'),
+    CardDefaultMental: bigint('CardDefaultMental', { mode: 'number' }),
+    CardDefaultTechnique: bigint('CardDefaultTechnique', { mode: 'number' }),
+    QuestDailyTicketLimitUseCount: bigint('QuestDailyTicketLimitUseCount', { mode: 'number' }),
+    QuestContestTicketLimitUseCount: bigint('QuestContestTicketLimitUseCount', { mode: 'number' }),
   },
   (t) => [uniqueIndex('master_setting_id_idx').on(t.Id)],
 );
@@ -1093,6 +1123,7 @@ export const masterCharacter = pgTable(
     Cv: text('Cv'),
     Color: text('Color'),
     DefaultCostumeId: text('DefaultCostumeId'),
+    DefaultLiveCostumeId: text('DefaultLiveCostumeId'),
     LoveInfo: jsonb('LoveInfo'),
     LoveInfos: jsonb('LoveInfos'),
     Type: bigint('Type', { mode: 'number' }),
@@ -1461,4 +1492,274 @@ export const masterManagerLevel = pgTable(
     MaxPhotoReportLevel: bigint('MaxPhotoReportLevel', { mode: 'number' }),
   },
   (t) => [uniqueIndex('master_manager_level_key_idx').on(t.Level)],
+);
+
+export const masterAreaGroup = pgTable(
+  'master_AreaGroup',
+  {
+    Id: text('Id').notNull(),
+    Name: text('Name'),
+    Order: bigint('Order', { mode: 'number' }),
+    AssetId: text('AssetId'),
+    AreaIds: jsonb('AreaIds'),
+  },
+  (t) => [uniqueIndex('master_area_group_id_idx').on(t.Id)],
+);
+
+export const masterMusicChartPattern = pgTable(
+  'master_MusicChartPattern',
+  {
+    Id: text('Id').notNull(),
+    Number: bigint('Number', { mode: 'number' }).notNull(),
+    Type: bigint('Type', { mode: 'number' }),
+    Position: bigint('Position', { mode: 'number' }),
+  },
+  (t) => [uniqueIndex('master_music_chart_pattern_key_idx').on(t.Id, t.Number)],
+);
+
+export const masterMusicMasteryLevel = pgTable(
+  'master_MusicMasteryLevel',
+  {
+    Level: bigint('Level', { mode: 'number' }).notNull(),
+    RequiredMasteryPoint: bigint('RequiredMasteryPoint', { mode: 'number' }),
+  },
+  (t) => [uniqueIndex('master_music_mastery_level_key_idx').on(t.Level)],
+);
+
+export const masterMusicMasteryReward = pgTable(
+  'master_MusicMasteryReward',
+  {
+    MusicId: text('MusicId').notNull(),
+    CharacterId: text('CharacterId').notNull(),
+    MusicMasteryRewardSetId: text('MusicMasteryRewardSetId'),
+  },
+  (t) => [
+    uniqueIndex('master_music_mastery_reward_key_idx').on(t.MusicId, t.CharacterId),
+  ],
+);
+
+export const masterMusicMasteryRewardSet = pgTable(
+  'master_MusicMasteryRewardSet',
+  {
+    Id: text('Id').notNull(),
+    Level: bigint('Level', { mode: 'number' }).notNull(),
+    RewardId: text('RewardId'),
+    RewardStoneAmount: bigint('RewardStoneAmount', { mode: 'number' }),
+  },
+  (t) => [uniqueIndex('master_music_mastery_reward_set_key_idx').on(t.Id, t.Level)],
+);
+
+export const masterSkillEfficacy = pgTable(
+  'master_SkillEfficacy',
+  {
+    Id: text('Id').notNull(),
+    Name: text('Name'),
+    Type: bigint('Type', { mode: 'number' }),
+    Description: text('Description'),
+    ShortDescription: text('ShortDescription'),
+    Grade: bigint('Grade', { mode: 'number' }),
+    MaxGrade: bigint('MaxGrade', { mode: 'number' }),
+    SkillTargetId: text('SkillTargetId'),
+    LimitBreakMaxGrade: bigint('LimitBreakMaxGrade', { mode: 'number' }),
+  },
+  (t) => [uniqueIndex('master_skill_efficacy_id_idx').on(t.Id)],
+);
+
+export const masterSkillTrigger = pgTable(
+  'master_SkillTrigger',
+  {
+    Id: text('Id').notNull(),
+    Type: bigint('Type', { mode: 'number' }),
+    CharacterIds: jsonb('CharacterIds'),
+  },
+  (t) => [uniqueIndex('master_skill_trigger_id_idx').on(t.Id)],
+);
+
+export const masterSkillTarget = pgTable(
+  'master_SkillTarget',
+  {
+    Id: text('Id').notNull(),
+    Type: bigint('Type', { mode: 'number' }),
+    IsOpponent: boolean('IsOpponent'),
+  },
+  (t) => [uniqueIndex('master_skill_target_id_idx').on(t.Id)],
+);
+
+export const masterQuestStaminaConsumption = pgTable(
+  'master_QuestStaminaConsumption',
+  {
+    RemainStaminaRatioPercent: bigint('RemainStaminaRatioPercent', { mode: 'number' }).notNull(),
+    SkillTargetParameterWeightPermil: bigint('SkillTargetParameterWeightPermil', {
+      mode: 'number',
+    }),
+  },
+  (t) => [
+    uniqueIndex('master_quest_stamina_consumption_key_idx').on(t.RemainStaminaRatioPercent),
+  ],
+);
+
+export const masterQuestAudienceAdvantage = pgTable(
+  'master_QuestAudienceAdvantage',
+  {
+    Id: text('Id').notNull(),
+    AudienceAmount: bigint('AudienceAmount', { mode: 'number' }).notNull(),
+    AdvantagePermil: bigint('AdvantagePermil', { mode: 'number' }),
+  },
+  (t) => [
+    uniqueIndex('master_quest_audience_advantage_key_idx').on(t.Id, t.AudienceAmount),
+  ],
+);
+
+export const masterQuestCharacterAdvantage = pgTable(
+  'master_QuestCharacterAdvantage',
+  {
+    Id: text('Id').notNull(),
+    CharacterGroupId: text('CharacterGroupId'),
+    CharacterIds: jsonb('CharacterIds'),
+    AdvantagePermil: bigint('AdvantagePermil', { mode: 'number' }),
+  },
+  (t) => [uniqueIndex('master_quest_character_advantage_id_idx').on(t.Id)],
+);
+
+export const masterComboAdvantage = pgTable(
+  'master_ComboAdvantage',
+  {
+    Id: text('Id').notNull(),
+    ComboCount: bigint('ComboCount', { mode: 'number' }).notNull(),
+    AdvantagePermil: bigint('AdvantagePermil', { mode: 'number' }),
+  },
+  (t) => [uniqueIndex('master_combo_advantage_key_idx').on(t.Id, t.ComboCount)],
+);
+
+export const masterQuestPressure = pgTable(
+  'master_QuestPressure',
+  {
+    Id: text('Id').notNull(),
+    Name: text('Name'),
+    WeightPermil: bigint('WeightPermil', { mode: 'number' }),
+  },
+  (t) => [uniqueIndex('master_quest_pressure_id_idx').on(t.Id)],
+);
+
+export const masterLiveBonus = pgTable(
+  'master_LiveBonus',
+  {
+    Id: text('Id').notNull(),
+    Name: text('Name'),
+    LiveAbilityId: text('LiveAbilityId'),
+    LiveAbilityLevel: bigint('LiveAbilityLevel', { mode: 'number' }),
+  },
+  (t) => [uniqueIndex('master_live_bonus_id_idx').on(t.Id)],
+);
+
+export const masterLiveBonusGroup = pgTable(
+  'master_LiveBonusGroup',
+  {
+    GroupId: text('GroupId').notNull(),
+    LiveBonusIds: jsonb('LiveBonusIds'),
+  },
+  (t) => [uniqueIndex('master_live_bonus_group_key_idx').on(t.GroupId)],
+);
+
+export const masterPhotoAbilityTarget = pgTable(
+  'master_PhotoAbilityTarget',
+  {
+    Id: text('Id').notNull(),
+    Type: bigint('Type', { mode: 'number' }),
+    TargetId: text('TargetId'),
+  },
+  (t) => [uniqueIndex('master_photo_ability_target_id_idx').on(t.Id)],
+);
+
+export const masterStatusEffectName = pgTable(
+  'master_StatusEffectName',
+  {
+    StatusEffectType: bigint('StatusEffectType', { mode: 'number' }).notNull(),
+    Name: text('Name'),
+  },
+  (t) => [uniqueIndex('master_status_effect_name_key_idx').on(t.StatusEffectType)],
+);
+
+export const masterQuest = pgTable(
+  'master_Quest',
+  {
+    Id: text('Id').notNull(),
+    AreaId: text('AreaId'),
+    StageId: text('StageId'),
+    MusicId: text('MusicId'),
+    DifficultyLevel: bigint('DifficultyLevel', { mode: 'number' }),
+    Name: text('Name'),
+    Description: text('Description'),
+    Order: bigint('Order', { mode: 'number' }),
+    MusicChartPatternId: text('MusicChartPatternId'),
+    Position1AttributeType: bigint('Position1AttributeType', { mode: 'number' }),
+    Position2AttributeType: bigint('Position2AttributeType', { mode: 'number' }),
+    Position3AttributeType: bigint('Position3AttributeType', { mode: 'number' }),
+    Position4AttributeType: bigint('Position4AttributeType', { mode: 'number' }),
+    Position5AttributeType: bigint('Position5AttributeType', { mode: 'number' }),
+    ActiveSkillWeightPermil: bigint('ActiveSkillWeightPermil', { mode: 'number' }),
+    SpecialSkillWeightPermil: bigint('SpecialSkillWeightPermil', { mode: 'number' }),
+    SkillStaminaWeightPermil: bigint('SkillStaminaWeightPermil', { mode: 'number' }),
+    StaminaRecoveryWeightPermil: bigint('StaminaRecoveryWeightPermil', { mode: 'number' }),
+    BeatDanceWeightPermil: bigint('BeatDanceWeightPermil', { mode: 'number' }),
+    BeatVocalWeightPermil: bigint('BeatVocalWeightPermil', { mode: 'number' }),
+    BeatVisualWeightPermil: bigint('BeatVisualWeightPermil', { mode: 'number' }),
+    MaxCapacity: bigint('MaxCapacity', { mode: 'number' }),
+    MentalThreshold: bigint('MentalThreshold', { mode: 'number' }),
+    QuestPressureId: text('QuestPressureId'),
+    QuestCharacterAdvantageId: text('QuestCharacterAdvantageId'),
+    QuestAudienceAdvantageId: text('QuestAudienceAdvantageId'),
+    MoodType: bigint('MoodType', { mode: 'number' }),
+    ClearScore: bigint('ClearScore', { mode: 'number' }),
+    RewardManagerExp: bigint('RewardManagerExp', { mode: 'number' }),
+    RewardCardExp: bigint('RewardCardExp', { mode: 'number' }),
+    ClearRewardId: text('ClearRewardId'),
+    RankAdditionalRewardId: text('RankAdditionalRewardId'),
+    RankSRewardId: text('RankSRewardId'),
+    RankARewardId: text('RankARewardId'),
+    RankBRewardId: text('RankBRewardId'),
+    RankCRewardId: text('RankCRewardId'),
+    RankDRewardId: text('RankDRewardId'),
+    ViewConditionId: text('ViewConditionId'),
+    UnlockConditionId: text('UnlockConditionId'),
+    DailyLimitCount: bigint('DailyLimitCount', { mode: 'number' }),
+    TicketAmount: bigint('TicketAmount', { mode: 'number' }),
+    AchievedRankRewards: jsonb('AchievedRankRewards'),
+    LiveBonusGroupId: text('LiveBonusGroupId'),
+    LiveSkipType: bigint('LiveSkipType', { mode: 'number' }),
+  },
+  (t) => [uniqueIndex('master_quest_id_idx').on(t.Id)],
+);
+
+export const masterFunctionLock = pgTable(
+  'master_FunctionLock',
+  {
+    Type: bigint('Type', { mode: 'number' }).notNull(),
+    UnlockConditionId: text('UnlockConditionId'),
+  },
+  (t) => [uniqueIndex('master_function_lock_type_idx').on(t.Type)],
+);
+
+export const masterHierarchyReward = pgTable(
+  'master_HierarchyReward',
+  {
+    Id: text('Id').notNull(),
+    Order: bigint('Order', { mode: 'number' }),
+    Name: text('Name'),
+    ConditionId: text('ConditionId'),
+    RewardId: text('RewardId'),
+  },
+  (t) => [uniqueIndex('master_hierarchy_reward_id_idx').on(t.Id)],
+);
+
+export const masterHierarchyDivisionReward = pgTable(
+  'master_HierarchyDivisionReward',
+  {
+    Id: text('Id').notNull(),
+    Name: text('Name'),
+    RewardId: text('RewardId'),
+    Order: bigint('Order', { mode: 'number' }),
+    DetailGradeId: text('DetailGradeId'),
+  },
+  (t) => [uniqueIndex('master_hierarchy_division_reward_id_idx').on(t.Id)],
 );

@@ -101,6 +101,29 @@ import {
   masterManagerLevel,
   masterMusic,
   masterHierarchyDetailGrade,
+  masterActivityPerformance,
+  masterCharacterActivityLevel,
+  masterQuest,
+  masterAreaGroup,
+  masterMusicChartPattern,
+  masterMusicMasteryLevel,
+  masterMusicMasteryReward,
+  masterMusicMasteryRewardSet,
+  masterSkillEfficacy,
+  masterSkillTrigger,
+  masterSkillTarget,
+  masterQuestStaminaConsumption,
+  masterQuestAudienceAdvantage,
+  masterQuestCharacterAdvantage,
+  masterComboAdvantage,
+  masterQuestPressure,
+  masterLiveBonus,
+  masterLiveBonusGroup,
+  masterPhotoAbilityTarget,
+  masterStatusEffectName,
+  masterFunctionLock,
+  masterHierarchyReward,
+  masterHierarchyDivisionReward,
 } from './masterSchema.ts';
 
 const STRUCTURED_DIR =
@@ -201,6 +224,29 @@ const MASTER_TABLES = {
   ManagerLevel: masterManagerLevel,
   Music: masterMusic,
   HierarchyDetailGrade: masterHierarchyDetailGrade,
+  ActivityPerformance: masterActivityPerformance,
+  CharacterActivityLevel: masterCharacterActivityLevel,
+  Quest: masterQuest,
+  AreaGroup: masterAreaGroup,
+  MusicChartPattern: masterMusicChartPattern,
+  MusicMasteryLevel: masterMusicMasteryLevel,
+  MusicMasteryReward: masterMusicMasteryReward,
+  MusicMasteryRewardSet: masterMusicMasteryRewardSet,
+  SkillEfficacy: masterSkillEfficacy,
+  SkillTrigger: masterSkillTrigger,
+  SkillTarget: masterSkillTarget,
+  QuestStaminaConsumption: masterQuestStaminaConsumption,
+  QuestAudienceAdvantage: masterQuestAudienceAdvantage,
+  QuestCharacterAdvantage: masterQuestCharacterAdvantage,
+  ComboAdvantage: masterComboAdvantage,
+  QuestPressure: masterQuestPressure,
+  LiveBonus: masterLiveBonus,
+  LiveBonusGroup: masterLiveBonusGroup,
+  PhotoAbilityTarget: masterPhotoAbilityTarget,
+  StatusEffectName: masterStatusEffectName,
+  FunctionLock: masterFunctionLock,
+  HierarchyReward: masterHierarchyReward,
+  HierarchyDivisionReward: masterHierarchyDivisionReward,
 } as const;
 
 type MasterType = keyof typeof MASTER_TABLES;
@@ -225,7 +271,12 @@ async function seedTable(type: MasterType): Promise<number> {
 
   const values = rows.map((r) => {
     const v: Record<string, unknown> = {};
-    for (const c of colNames) v[c] = (r as Record<string, unknown>)[c] ?? null;
+    for (const c of colNames) {
+      const value = (r as Record<string, unknown>)[c] ?? null;
+      // The structured JSON writes proto bools as 0/1; postgres-js would store
+      // a numeric 1 in a boolean column as false.
+      v[c] = (cols as Record<string, { dataType: string }>)[c].dataType === 'boolean' && typeof value === 'number' ? value !== 0 : value;
+    }
     return v;
   });
 

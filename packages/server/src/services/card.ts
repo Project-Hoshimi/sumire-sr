@@ -19,13 +19,12 @@ import {
 import { getCard as getUserCard, getItemAmount, grantItem, spendItem } from './inventory.ts';
 import { unlockCardStories } from './cardStories.ts';
 import { applyCardRelease, cardReleaseForCard } from './cardRelease.ts';
-import { getCurrency, spendCurrency } from './currency.ts';
+import { spendStone } from './currency.ts';
 import { getSingleton, listElements, putElements, putSingleton, removeElements } from './playerState.ts';
 import type { Decoded } from '@sumire-sr/protocol/runtime/proto.ts';
 
 const USER_CARD_MSG = 'Solis.Common.Proto.Transaction.UserCard';
 const USER_ITEM_MSG = 'Solis.Common.Proto.Transaction.UserItem';
-const USER_BALANCE_MSG = 'Solis.Common.Proto.Transaction.UserBalance';
 const USER_MSG = 'Solis.Common.Proto.Transaction.User';
 const CARD_ENHANCE_RESPONSE_MSG = 'Solis.Common.Proto.Api.CardEnhanceResponse';
 const CARD_LIMIT_BREAK_RESPONSE_MSG = 'Solis.Common.Proto.Api.CardLimitBreakResponse';
@@ -147,29 +146,9 @@ export function applyCardStatsFromParam(userCard: Decoded, mc: Decoded, param: D
 }
 
 /** Recompute a card's level-derived stats from its master parameter ratios. */
-async function applyCardStats(userCard: Decoded, mc: Decoded, level: number): Promise<void> {
+export async function applyCardStats(userCard: Decoded, mc: Decoded, level: number): Promise<void> {
   const param = await getCardParameter(String(mc.CardParameterId ?? ''), level);
   applyCardStatsFromParam(userCard, mc, param);
-}
-
-/** Spend stones, draining free jewels before paid. Returns a UserBalance slice. */
-async function spendStone(
-  exec: Executor,
-  playerId: string,
-  amount: number,
-): Promise<Decoded> {
-  const free = await getCurrency(playerId, 'freeJewel', exec);
-  let remaining = amount;
-  if (free >= remaining) {
-    await spendCurrency(playerId, 'freeJewel', remaining, exec);
-  } else {
-    await spendCurrency(playerId, 'freeJewel', free, exec);
-    remaining -= free;
-    await spendCurrency(playerId, 'paidJewel', remaining, exec);
-  }
-  const freeAfter = await getCurrency(playerId, 'freeJewel', exec);
-  const paidAfter = await getCurrency(playerId, 'paidJewel', exec);
-  return { __msg: USER_BALANCE_MSG, FreeBalance: freeAfter, PaidBalance: paidAfter } as Decoded;
 }
 
 function itemSlice(itemId: string, amount: number): Decoded {
@@ -615,7 +594,7 @@ register(
 
       let balance: Decoded | null = null;
       if (useStone) {
-        balance = await spendStone(tx, playerId, Number(row.StoneAmount ?? 0));
+        balance = await spendStone(playerId, Number(row.StoneAmount ?? 0), tx);
       } else {
         await spendItem(playerId, String(row.ItemId ?? ''), Number(row.ItemAmount ?? 0), tx);
       }
@@ -653,7 +632,7 @@ register(
       const userCard = await requireCard(tx, playerId, cardId, 'Card:Reset');
       const setting = await getSetting();
       const stone = Number(setting?.CardResetStoneAmount ?? 50);
-      const balance = await spendStone(tx, playerId, stone);
+      const balance = await spendStone(playerId, stone, tx);
 
       refund = Number(userCard.TotalExp ?? 0);
       if (refund > 0) await grantItem(playerId, CARD_ENHANCE_ITEM, refund, tx);

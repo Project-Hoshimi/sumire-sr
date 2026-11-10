@@ -6,6 +6,7 @@ import { players } from '../db/schema.ts';
 import { getCorpusResponses } from './replay/corpus.ts';
 import { applyRewardRefs } from '../master/reward.ts';
 import { spendCurrency } from './currency.ts';
+import { attachPlayerBalance } from './playerState.ts';
 import { getPurchaseCount, incrementPurchase, listPurchaseCounts } from './purchases.ts';
 import { msgRegistry, decodeMessage, Reader } from '@sumire-sr/protocol/runtime/proto.ts';
 import type { Decoded } from '@sumire-sr/protocol/runtime/proto.ts';
@@ -105,6 +106,10 @@ register(
       if (type && cost > 0) await spent(type, cost, pl.id, tx);
 
       const result = await applyRewardRefs(pl.id, [String(item.RewardId)], tx);
+      if (type === RESOURCE_STONE && cost > 0) {
+        result.updated = result.updated ?? ({ __msg: UPDATED_DATA_MSG } as Decoded);
+        await attachPlayerBalance(pl.id, result.updated, tx);
+      }
       await incrementPurchase(pl.id, PURCHASE_KIND, String(number), tx);
       return result;
     });

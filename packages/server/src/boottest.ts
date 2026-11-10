@@ -17,9 +17,9 @@ await import('./services/all.ts');
 console.log(`registered handlers: ${listNames().length}`);
 
 // Unhandled-RPC contract: an endpoint that exists in endpoints.ts but has no
-// handler (Activity:PromoteLesson is absent from handlers/corpus) must answer
+// handler (Activity:LoadFanEvent is absent from handlers/corpus) must answer
 // gRPC UNIMPLEMENTED (12) with the dialog + return-home metadata.
-const unknown = await fetch('http://127.0.0.1:18099/api.Activity/PromoteLesson', { method: 'POST' });
+const unknown = await fetch('http://127.0.0.1:18099/api.Activity/LoadFanEvent', { method: 'POST' });
 const msgBin = unknown.headers.get('x-error-message-bin');
 const decodedMsg = msgBin ? Buffer.from(msgBin, 'base64').toString('utf8') : null;
 const unknownHeaders = {
@@ -65,6 +65,13 @@ const SLICE14_DYNAMIC = [
 for (const name of SLICE14_DYNAMIC) DYNAMIC.add(name);
 const SLICE16_DYNAMIC = ['Home:Enter'];
 for (const name of SLICE16_DYNAMIC) DYNAMIC.add(name);
+const QUEST_DYNAMIC = [
+  'Quest:Start', 'Quest:Top', 'Quest:ListMain', 'Quest:ListAsset',
+  'Quest:ListLatestClear', 'Quest:GetLatestClearLiveResult',
+];
+for (const name of QUEST_DYNAMIC) DYNAMIC.add(name);
+const ACTIVITY_DYNAMIC = ['Activity:PromoteLesson'];
+for (const name of ACTIVITY_DYNAMIC) DYNAMIC.add(name);
 for (const name of listCorpusNames()) {
   const entry = corpus.get(name)!;
   if (!entry.request) continue; // only entries with a matching captured request get verified end-to-end
