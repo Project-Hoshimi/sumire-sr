@@ -81,7 +81,7 @@ Levels are defined in [ROADMAP.md](../ROADMAP.md). `unrated` means a handler exi
 | Costume | SetCostume | unrated |
 | Costume | SetLiveCostume | unrated |
 | Deck | BuddyList | stub |
-| Deck | Delete | unrated |
+| Deck | Delete | sandbox-ok |
 | Deck | Save | unrated |
 | Diary | GetInfos | unrated |
 | Diary | Read | unrated |
@@ -438,4 +438,4 @@ Levels are defined in [ROADMAP.md](../ROADMAP.md). `unrated` means a handler exi
 | User | ProvideExternalReward | missing |
 | Warning | SetDisplayed | stub |
 
-**Totals:** 425 endpoints — 0 parity, 6 sandbox-ok, 9 stub, 201 unrated, 209 missing.
+**Totals:** 425 endpoints — 0 parity, 7 sandbox-ok, 9 stub, 200 unrated, 209 missing.

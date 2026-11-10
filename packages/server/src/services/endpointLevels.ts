@@ -15,6 +15,7 @@ export const ENDPOINT_LEVELS: Readonly<Record<string, EndpointLevel>> = {
   'Anniversary:OutputTransitionLog': 'stub',
   'Auth:Login': 'sandbox-ok',
   'Deck:BuddyList': 'stub',
+  'Deck:Delete': 'sandbox-ok',
   'Dokan:List': 'stub',
   'Health:Check': 'stub',
   'Home:Enter': 'sandbox-ok',

@@ -325,6 +325,38 @@ check(
   afterDeck2.DeckPositions?.filter((p: any) => p.Number === 7).length === 1,
 );
 
+// --- Deck:Save with Number 0 creates a new deck with the next free number ---
+const highestDeck = Math.max(0, ...(afterDeck2.Decks ?? []).map((d: any) => Number(d.Number ?? 0)));
+const newDeckResp = await saveDeck(0, 'NEWDECK', [{ Position: 1, CardId: 'card-ngs-03-schl-00' }]);
+const newDeckNumber = newDeckResp.CommonResponse?.UpdatedData?.Decks?.[0]?.Number;
+check('Deck:Save Number 0 assigns the next free deck number', newDeckNumber === highestDeck + 1);
+check(
+  'Deck:Save Number 0 echoes positions under the assigned number',
+  newDeckResp.CommonResponse?.UpdatedData?.DeckPositions?.[0]?.Number === highestDeck + 1,
+);
+check('Deck:Save Number 0 stores no deck numbered 0', !(await userGet()).Decks?.some((d: any) => !d.Number));
+check(
+  'Deck:Save Number 0 returns User with the advanced DeckSequence',
+  Number(newDeckResp.CommonResponse?.UpdatedData?.User?.DeckSequence ?? 0) === newDeckNumber,
+);
+// The sequence is never reused: delete the new deck, create another, and the
+// number keeps counting up.
+await dispatchRpc(
+  'Deck:Delete',
+  encodeReq(msgRegistry.get(endpoints['Deck']['Delete'].request)!, { Number: newDeckNumber }),
+  { headers: { 'x-auth-token': r1.GameAuthToken }, log: { info() {}, warn() {} } } as any,
+);
+const nextDeckResp = await saveDeck(0, '', [{ Position: 1, CardId: 'card-ngs-03-schl-00' }]);
+check(
+  'Deck:Save Number 0 does not reuse a deleted deck number',
+  nextDeckResp.CommonResponse?.UpdatedData?.Decks?.[0]?.Number === newDeckNumber + 1,
+);
+check(
+  'Deck:Save Number 0 with an empty name gets the default name',
+  nextDeckResp.CommonResponse?.UpdatedData?.Decks?.[0]?.Name === `ユニット${newDeckNumber + 1}`,
+);
+check('Deck:Save Number 0 persisted DeckSequence', Number((await userGet()).User?.DeckSequence ?? 0) === newDeckNumber + 1);
+
 // --- Deck:Delete removes the deck and its positions ---
 const deckDelReqShape = msgRegistry.get(endpoints['Deck']['Delete'].request)!;
 const deckDelRespShape = msgRegistry.get(endpoints['Deck']['Delete'].response)!;
@@ -349,6 +381,7 @@ check(
     deckDelResp.CommonResponse?.DeletedData?.DeckPositions?.[0]?.Number === 7 &&
     deckDelResp.CommonResponse?.DeletedData?.DeckPositions?.[0]?.Position === 1,
 );
+check('Deck:Delete response carries UpdatedData', deckDelResp.CommonResponse?.UpdatedData != null);
 check('Deck:Delete removed deck #7', !afterDeckDel.Decks?.some((d: any) => d.Number === 7));
 check('Deck:Delete removed the positions of deck #7', !afterDeckDel.DeckPositions?.some((p: any) => p.Number === 7));
 check(
