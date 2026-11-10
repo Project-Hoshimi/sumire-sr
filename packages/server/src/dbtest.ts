@@ -325,6 +325,44 @@ check(
   afterDeck2.DeckPositions?.filter((p: any) => p.Number === 7).length === 1,
 );
 
+// --- Deck:Delete removes the deck and its positions ---
+const deckDelReqShape = msgRegistry.get(endpoints['Deck']['Delete'].request)!;
+const deckDelRespShape = msgRegistry.get(endpoints['Deck']['Delete'].response)!;
+const deleteDeckRpc = async (number: number) => {
+  const bytes = await dispatchRpc(
+    'Deck:Delete',
+    encodeReq(deckDelReqShape, { Number: number }),
+    { headers: { 'x-auth-token': r1.GameAuthToken }, log: { info() {}, warn() {} } } as any,
+  );
+  return decodeMessage(deckDelRespShape, new Reader(Uint8Array.from(bytes))) as any;
+};
+
+const deckDelResp = await deleteDeckRpc(7);
+const afterDeckDel = await userGet();
+check(
+  'Deck:Delete reports the deck in DeletedData',
+  deckDelResp.CommonResponse?.DeletedData?.Decks?.[0]?.Number === 7,
+);
+check(
+  'Deck:Delete reports the removed position in DeletedData',
+  deckDelResp.CommonResponse?.DeletedData?.DeckPositions?.length === 1 &&
+    deckDelResp.CommonResponse?.DeletedData?.DeckPositions?.[0]?.Number === 7 &&
+    deckDelResp.CommonResponse?.DeletedData?.DeckPositions?.[0]?.Position === 1,
+);
+check('Deck:Delete removed deck #7', !afterDeckDel.Decks?.some((d: any) => d.Number === 7));
+check('Deck:Delete removed the positions of deck #7', !afterDeckDel.DeckPositions?.some((p: any) => p.Number === 7));
+check(
+  'Deck:Delete left other decks intact',
+  (u.Decks ?? []).every((d: any) => afterDeckDel.Decks?.some((n: any) => n.Number === d.Number)),
+);
+let deckDelRejected = false;
+try {
+  await deleteDeckRpc(0);
+} catch {
+  deckDelRejected = true;
+}
+check('Deck:Delete rejects a non-positive number', deckDelRejected);
+
 // --- master data loaded into Postgres ---
 const {
   getManifestVersion,
