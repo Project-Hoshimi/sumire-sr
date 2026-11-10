@@ -9,11 +9,12 @@ Every RPC endpoint moves through the same ladder. The generated [docs/ENDPOINTS.
 | Level | Meaning |
 |---|---|
 | `missing` | No handler and no response. The client should not depend on it. |
+| `unrated` | A handler is registered but no level has been recorded yet. Treat it as unverified. |
 | `stub` | The endpoint is registered but returns an empty/default response, a captured replay, or an explicit "not implemented" path. Enough to keep the client alive, not enough to be correct. |
 | `sandbox-ok` | Works correctly in `SUMIRE_PROFILE=sandbox` (including sandbox-only overrides). Official behaviour may still differ. |
 | `parity` | Matches the official server's observable behaviour closely enough to pass capture-based and behavioural tests. This is the highest level. |
 
-`docs/ENDPOINTS.md` is generated from the protocol schema and handler registry. Do not edit it by hand; regenerate it with `npm run docs:endpoints`.
+`docs/ENDPOINTS.md` is generated from the protocol schema, the handler registrations and the levels recorded in `packages/server/src/services/endpointLevels.ts`. To change an endpoint's level, edit that file and run `npm run docs:endpoints`. Do not edit `docs/ENDPOINTS.md` by hand.
 
 ## Track 1 — Sandbox (`sandbox-v1`)
 
