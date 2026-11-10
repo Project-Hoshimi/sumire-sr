@@ -1,6 +1,6 @@
 # Client setup — private server (HoshimiLocalify-sr redirect)
 
-For players/devices pointing the game at a sumire-sr instance. The **primary** path is the HoshimiLocalify-sr mod (`sumire-sr/HoshimiLocalify-sr`, branch `feat/private-server`); it needs no Frida and no system CA. The Frida redirect (`frida/attach_e2e.sh` + `frida/e2e_hooks.js`) is **legacy** and kept only for diagnostics and the love-story replay patch (see §3).
+For players/devices pointing the game at a sumire-sr instance. The **primary** path is the [HoshimiLocalify-en](https://github.com/Project-Hoshimi/HoshimiLocalify-en) mod; it needs no Frida and no system CA. The Frida redirect (`frida/attach_e2e.sh` + `frida/e2e_hooks.js`) is **legacy** and kept only for diagnostics and the love-story replay patch (see §3).
 
 ## 1. Mod settings
 

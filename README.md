@@ -49,6 +49,8 @@ npm run check
 SUMIRE_PROFILE=sandbox npm run -w packages/server dev
 ```
 
+Testing rather than developing? See the [tester guide](docs/TESTER_GUIDE.md).
+
 To run the server in the container instead of on the host:
 
 ```sh
