@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm';
+import { eq, or, sql } from 'drizzle-orm';
 import { register } from './handlers.ts';
 import { db } from '../db/client.ts';
 import { withPlayerTx, type Executor } from '../db/tx.ts';
@@ -10,6 +10,8 @@ import { isSandbox } from '../profile.ts';
 import { birthdayBadRequest, loadReconciledBirthday } from './birthday.ts';
 import { birthdayClock, isValidBirthDate, nextAdv, reminder } from './birthdayLogic.ts';
 import { SANDBOX_HIERARCHY_DETAIL_GRADE_ID, SANDBOX_HIERARCHY_RANK } from '../profiles/sandbox/hierarchy.ts';
+import { GRPC_STATUS, RpcError } from './errors.ts';
+import { friendIds, profileInfosFor, profileShowpieces } from './friendLinks.ts';
 
 /**
  * Server-authoritative profile customization / equip.
@@ -31,6 +33,7 @@ const UPDATED_DATA_MSG = 'Solis.Common.Proto.Api.UpdatedData';
 const DELETED_DATA_MSG = 'Solis.Common.Proto.Api.DeletedData';
 const PROFILE_MSG = 'Solis.Common.Proto.Transaction.UserProfile';
 const USER_MSG = 'Solis.Common.Proto.Transaction.User';
+const FIND_USER_RESPONSE_MSG = 'Solis.Common.Proto.Api.ProfileFindUserResponse';
 
 async function playerForAccount(accountId: string, rpc: string, exec: Executor = db) {
   const [pl] = await exec.select().from(players).where(eq(players.accountId, accountId)).limit(1);
@@ -272,31 +275,99 @@ register(
 );
 
 /**
+ * Hierarchy grade and rank shown on a profile. The player has no stored
+ * grade/rank: report the lowest master detail grade and rank 0, or the fixed
+ * sandbox grade and rank in the sandbox profile.
+ */
+async function currentHierarchy(rpc: string): Promise<{ gradeId: string; rank: number }> {
+  let gradeId = SANDBOX_HIERARCHY_DETAIL_GRADE_ID;
+  let rank = SANDBOX_HIERARCHY_RANK;
+  if (!isSandbox()) {
+    const grade = await getLowestHierarchyDetailGrade();
+    if (!grade) throw new Error(`${rpc}: no hierarchy detail grade master data`);
+    gradeId = String(grade.Id);
+    rank = 0;
+  }
+  return { gradeId, rank };
+}
+
+/**
  * `Profile:Top` — business card (profile) screen.
  *
  * The player has no stored hierarchy grade/rank, so report the lowest master
  * detail grade (where a fresh player starts) and rank 0. The sandbox shows
- * every player at BIG4 instead, and has no other players, so the friend
- * profile list is always empty.
+ * every player at BIG4 instead. `FriendProfiles` is the player's friend list.
  */
 register(
   'Profile:Top',
   async (ctx) => {
     const accountId = accountOf(ctx);
-    await playerForAccount(accountId, 'Profile:Top');
-    let gradeId = SANDBOX_HIERARCHY_DETAIL_GRADE_ID;
-    let rank = SANDBOX_HIERARCHY_RANK;
-    if (!isSandbox()) {
-      const grade = await getLowestHierarchyDetailGrade();
-      if (!grade) throw new Error('Profile:Top: no hierarchy detail grade master data');
-      gradeId = String(grade.Id);
-      rank = 0;
-    }
+    const me = await playerForAccount(accountId, 'Profile:Top');
+    const { gradeId, rank } = await currentHierarchy('Profile:Top');
     return {
       __msg: '',
       HierarchyCurrentDetailGradeId: gradeId,
       HierarchyCurrentRank: rank,
-      FriendProfiles: [],
+      // The friend page is drawn from this list, not from `Friend:List`.
+      FriendProfiles: await profileInfosFor(await friendIds(me.id)),
+      CommonResponse: commonResponse(null),
+    } as Decoded;
+  },
+  { ownsState: true },
+);
+
+/**
+ * `Profile:FindUser` — user search on the profile screen.
+ *
+ * Finds any player on this server by public user id or server user id. The
+ * client shows its own message when the result is the caller. An id that
+ * matches nobody gets a default (empty) profile with a `CommonResponse`, which
+ * the client shows as "no matching user"; an error would not take that path
+ * (solis-server profile/find_user.go, which only ever finds the caller).
+ */
+register(
+  'Profile:FindUser',
+  async (ctx) => {
+    const accountId = accountOf(ctx);
+    const userId = ctx.request?.UserId ? String(ctx.request.UserId) : '';
+    if (!userId) throw new RpcError('Profile:FindUser: userId is required', GRPC_STATUS.INVALID_ARGUMENT);
+    await playerForAccount(accountId, 'Profile:FindUser');
+    const [pl] = await db
+      .select()
+      .from(players)
+      .where(or(eq(players.id, userId), sql`${players.data}->>'publicUserId' = ${userId}`))
+      .limit(1);
+    if (!pl) {
+      return { __msg: FIND_USER_RESPONSE_MSG, CommonResponse: commonResponse(null) } as Decoded;
+    }
+    const user = await loadUser(db, pl.id);
+    const profile = await loadProfile(db, pl.id);
+    const { gradeId, rank } = await currentHierarchy('Profile:FindUser');
+    const showpieces = await profileShowpieces(pl.id, user, profile);
+    return {
+      __msg: FIND_USER_RESPONSE_MSG,
+      UserId: pl.id,
+      // Player-row scalars are authoritative over the stored `User` blob, as
+      // in `User:Get`.
+      Name: pl.name,
+      ManagerExp: pl.exp,
+      ManagerLevel: pl.level,
+      DivisionId: String(user.DivisionId ?? ''),
+      GuildId: String(user.GuildId ?? ''),
+      EmblemId: String(user.EmblemId ?? ''),
+      FavoriteCard: showpieces.FavoriteCard,
+      FavoritePhoto: showpieces.FavoritePhoto,
+      FavoriteCharacterIds: (profile.FavoriteCharacterIds as string[] | undefined) ?? [],
+      Message: String(profile.Message ?? ''),
+      BirthMonth: Number(profile.BirthMonth ?? 0),
+      BirthDay: Number(profile.BirthDay ?? 0),
+      BackgroundType: Number(profile.BackgroundType ?? 0),
+      LayoutType: Number(profile.LayoutType ?? 0),
+      HierarchyCurrentDetailGradeId: gradeId,
+      HierarchyCurrentRank: rank,
+      DecorationId: String(profile.DecorationId ?? ''),
+      InformationType: Number(profile.InformationType ?? 0),
+      ColorType: Number(profile.ColorType ?? 0),
       CommonResponse: commonResponse(null),
     } as Decoded;
   },

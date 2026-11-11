@@ -246,6 +246,13 @@
       "when": 1794210481926,
       "tag": "0036_narrative_stack_master",
       "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1794380519509,
+      "tag": "0037_player_friend_links",
+      "breakpoints": true
     }
   ]
 }

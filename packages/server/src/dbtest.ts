@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { request as httpRequest } from 'node:http';
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, eq, inArray, or } from 'drizzle-orm';
 import { buildServer } from './server.ts';
 import { encrypt, decrypt } from './gateway/crypto.ts';
 import { DATA_DIR } from './config.ts';
@@ -10,7 +10,7 @@ import { endpoints } from '@sumire-sr/protocol/gen/endpoints.ts';
 import '@sumire-sr/protocol/gen/registry.ts';
 import { verifyToken } from './auth/jwt.ts';
 import { db } from './db/client.ts';
-import { accounts, players, playerEntities, playerExcursionState, playerBirthdayState, rewardClaims, playerLedger, playerPurchases, playerLoveProgress, playerLessonProgress, playerGachaState, gachaHistory, idolRoster, ownedCards, deckConfigurations, liveStageProgress, playerBoxGacha, playerMarathonPoint, photoImageMetadata } from './db/schema.ts';
+import { accounts, players, playerEntities, playerExcursionState, playerBirthdayState, rewardClaims, playerLedger, playerPurchases, playerLoveProgress, playerLessonProgress, playerGachaState, gachaHistory, idolRoster, ownedCards, deckConfigurations, liveStageProgress, playerBoxGacha, playerMarathonPoint, photoImageMetadata, playerFriendLinks } from './db/schema.ts';
 import { masterCondition, masterItem, masterPhotoQuestMusic, masterPhotoQuestStage, masterQuest } from './db/masterSchema.ts';
 import { parseFirebaseUid } from './services/auth.ts';
 import { applyRewardRefs } from './master/reward.ts';
@@ -18,6 +18,7 @@ import { mintIdToken } from './auth/firebaseTokens.ts';
 import { photoImagePath } from './firebaseStorage.ts';
 import { config as serverConfig } from './config.ts';
 import { getSingleton, listElements, putElements, putSingleton } from './services/playerState.ts';
+import { insertPending } from './services/friendLinks.ts';
 import { getItemAmount, grantItem as grantPromotionItem } from './services/inventory.ts';
 import { getActivityPerformance, getCostume, getHair, getHierarchyDetailGrade } from './master/index.ts';
 import { requireData } from './testing/requireData.ts';
@@ -74,6 +75,9 @@ await import('./services/all.ts');
 // Deterministic start: wipe ONLY the dedicated test account, then recreate it so
 // its entity store is (re)seeded from the corpus template. The device account is
 // left completely untouched.
+await db
+  .delete(playerFriendLinks)
+  .where(or(eq(playerFriendLinks.fromPlayerId, SERVER_USER_ID), eq(playerFriendLinks.toPlayerId, SERVER_USER_ID)));
 await db.delete(playerEntities).where(eq(playerEntities.playerId, SERVER_USER_ID));
 await db.delete(playerExcursionState).where(eq(playerExcursionState.playerId, SERVER_USER_ID));
 await db.delete(playerBirthdayState).where(eq(playerBirthdayState.playerId, SERVER_USER_ID));
@@ -1963,6 +1967,70 @@ const afterBday = await userGet();
 check('Profile:UpdateBirthday persisted via User:Get',
   Number(afterBday.Profile?.BirthMonth) === 7 && Number(afterBday.Profile?.BirthDay) === 23);
 
+// --- Profile:FindUser finds only the caller's own profile ---
+const findUser = (userId: string) =>
+  callRpc('Profile:FindUser', 'Solis.Common.Proto.Api.ProfileFindUserRequest', { UserId: userId });
+const findSelfBefore = await userGet();
+const foundByPublicId = await findUser(TEST_PUBLIC_USER_ID);
+check('Profile:FindUser finds the caller by public user id', foundByPublicId.UserId === SERVER_USER_ID);
+check('Profile:FindUser returns the caller name', foundByPublicId.Name === String(findSelfBefore.User?.Name ?? ''));
+check(
+  'Profile:FindUser returns the profile message',
+  foundByPublicId.Message === String(findSelfBefore.Profile?.Message ?? ''),
+);
+check('Profile:FindUser returns a hierarchy grade', !!foundByPublicId.HierarchyCurrentDetailGradeId);
+check('Profile:FindUser carries a CommonResponse', foundByPublicId.CommonResponse != null);
+check(
+  'Profile:FindUser returns the favourite photo set on the profile',
+  String(foundByPublicId.FavoritePhoto?.PhotoId ?? '') === String(findSelfBefore.Profile?.FavoritePhotoId ?? ''),
+);
+check(
+  'Profile:FindUser returns the favourite card set on the profile',
+  String(foundByPublicId.FavoriteCard?.CardId ?? '') === String(findSelfBefore.Profile?.FavoriteCardId ?? ''),
+);
+const foundByServerId = await findUser(SERVER_USER_ID);
+check('Profile:FindUser finds the caller by server user id', foundByServerId.UserId === SERVER_USER_ID);
+// A second player on the same server can be found by either id.
+const OTHER_ACCOUNT_ID = 'dbtest-account-0000-4000-8000-000000000002';
+const OTHER_USER_ID = 'dbtest-user-0000-4000-8000-000000000002';
+const OTHER_PUBLIC_USER_ID = 'DBTEST02';
+await db.delete(players).where(eq(players.id, OTHER_USER_ID));
+await db.delete(accounts).where(eq(accounts.id, OTHER_ACCOUNT_ID));
+await db.insert(accounts).values({
+  id: OTHER_ACCOUNT_ID,
+  firebaseUid: 'dbtest-firebase-uid-0002',
+  seedId: OTHER_PUBLIC_USER_ID,
+  displayName: 'OtherPlayer',
+  lastLoginAt: new Date(),
+});
+await db.insert(players).values({
+  id: OTHER_USER_ID,
+  accountId: OTHER_ACCOUNT_ID,
+  name: 'OtherPlayer',
+  level: 7,
+  data: { publicUserId: OTHER_PUBLIC_USER_ID },
+});
+const foundOther = await findUser(OTHER_PUBLIC_USER_ID);
+check(
+  'Profile:FindUser finds another player by public user id',
+  foundOther.UserId === OTHER_USER_ID && foundOther.Name === 'OtherPlayer' && Number(foundOther.ManagerLevel) === 7,
+);
+check('Profile:FindUser finds another player by server user id', (await findUser(OTHER_USER_ID)).UserId === OTHER_USER_ID);
+await db.delete(players).where(eq(players.id, OTHER_USER_ID));
+await db.delete(accounts).where(eq(accounts.id, OTHER_ACCOUNT_ID));
+const foundNobody = await findUser('NOSUCHUSER');
+check(
+  'Profile:FindUser returns an empty profile for an unknown id',
+  !foundNobody.UserId && !foundNobody.Name && foundNobody.CommonResponse != null,
+);
+let findUserEmptyThrew = false;
+try {
+  await findUser('');
+} catch {
+  findUserEmptyThrew = true;
+}
+check('Profile:FindUser rejects an empty user id', findUserEmptyThrew);
+
 const newName = `dbname-${Date.now().toString(36)}`;
 const nameResp = await updateProfile('Profile:UpdateName', { Name: newName });
 check('Profile:UpdateName returns UpdatedData.User', nameResp.CommonResponse?.UpdatedData?.User?.Name === newName);
@@ -2015,11 +2083,146 @@ check('Profile:Top returns a hierarchy detail grade', hierarchyGradeId.length > 
 check('Profile:Top hierarchy grade exists in master data', (await getHierarchyDetailGrade(hierarchyGradeId)) !== null);
 
 const friendListShape = msgRegistry.get(endpoints['Friend']['List'].response)!;
-const friendList = decodeMessage(
+const friendListResponse = decodeMessage(
   friendListShape,
   new Reader(Uint8Array.from(await dispatchRpc('Friend:List', Buffer.alloc(0), authOpts))),
 ) as any;
-check('Friend:List returns an empty profile list', (friendList.Profiles?.length ?? 0) === 0);
+check('Friend:List returns an empty profile list', (friendListResponse.Profiles?.length ?? 0) === 0);
+const friendSearch = decodeMessage(
+  msgRegistry.get(endpoints['Friend']['Search'].response)!,
+  new Reader(Uint8Array.from(await dispatchRpc('Friend:Search', Buffer.alloc(0), authOpts))),
+) as any;
+check('Friend:Search returns an empty suggested-user list', (friendSearch.Profiles?.length ?? 0) === 0);
+
+// --- Friend requests between two players ---
+// The second player cannot authenticate in this test, so its side is driven
+// through insertPending / direct table access.
+const FRIEND_ACCOUNT_ID = 'dbtest-account-0000-4000-8000-000000000003';
+const FRIEND_USER_ID = 'dbtest-user-0000-4000-8000-000000000003';
+const FRIEND_PUBLIC_ID = 'DBTEST03';
+
+const clearFriendLinks = () =>
+  db.delete(playerFriendLinks).where(
+    or(
+      inArray(playerFriendLinks.fromPlayerId, [FRIEND_USER_ID, SERVER_USER_ID]),
+      inArray(playerFriendLinks.toPlayerId, [FRIEND_USER_ID, SERVER_USER_ID]),
+    ),
+  );
+await clearFriendLinks();
+await db.delete(players).where(eq(players.id, FRIEND_USER_ID));
+await db.delete(accounts).where(eq(accounts.id, FRIEND_ACCOUNT_ID));
+await db.insert(accounts).values({
+  id: FRIEND_ACCOUNT_ID,
+  firebaseUid: 'dbtest-firebase-uid-0003',
+  seedId: FRIEND_PUBLIC_ID,
+  displayName: 'FriendPlayer',
+  lastLoginAt: new Date(),
+});
+await db.insert(players).values({
+  id: FRIEND_USER_ID,
+  accountId: FRIEND_ACCOUNT_ID,
+  name: 'FriendPlayer',
+  level: 9,
+  data: { publicUserId: FRIEND_PUBLIC_ID },
+});
+
+const friendRpc = (method: string, req: any) =>
+  callRpc(`Friend:${method}`, `Solis.Common.Proto.Api.Friend${method}Request`, req);
+const friendList = async (method: string) =>
+  decodeMessage(
+    msgRegistry.get((endpoints as any)['Friend'][method].response)!,
+    new Reader(Uint8Array.from(await dispatchRpc(`Friend:${method}`, Buffer.alloc(0), authOpts))),
+  ) as any;
+
+const friendApply = await friendRpc('Apply', { UserId: FRIEND_PUBLIC_ID });
+check('Friend:Apply creates a pending request', !!friendApply.Applied);
+const friendApplying = await friendList('ListApplying');
+check(
+  'Friend:ListApplying lists the target profile',
+  friendApplying.Profiles?.length === 1 &&
+    friendApplying.Profiles[0].UserId === FRIEND_PUBLIC_ID &&
+    friendApplying.Profiles[0].Name === 'FriendPlayer' &&
+    Number(friendApplying.Profiles[0].ManagerLevel) === 9,
+);
+
+const friendApplyAgain = await friendRpc('Apply', { UserId: FRIEND_PUBLIC_ID });
+check(
+  'Friend:Apply reports an existing outgoing request',
+  !!friendApplyAgain.IsAlreadyOffering && !friendApplyAgain.Applied,
+);
+
+const friendApplyMissing = await friendRpc('Apply', { UserId: 'NOSUCHUSER' });
+check('Friend:Apply reports an unknown user as deleted', !!friendApplyMissing.IsAccountDeleted);
+const friendApplySelf = await friendRpc('Apply', { UserId: TEST_PUBLIC_USER_ID });
+check('Friend:Apply reports the caller as deleted', !!friendApplySelf.IsAccountDeleted);
+
+await friendRpc('Cancel', { UserId: FRIEND_PUBLIC_ID });
+check(
+  'Friend:Cancel removes the outgoing request',
+  ((await friendList('ListApplying')).Profiles?.length ?? 0) === 0,
+);
+
+await insertPending(FRIEND_USER_ID, SERVER_USER_ID);
+const friendApplied = await friendList('ListApplied');
+check(
+  'Friend:ListApplied lists the incoming request',
+  friendApplied.Profiles?.length === 1 && friendApplied.Profiles[0].UserId === FRIEND_PUBLIC_ID,
+);
+const friendApplyIncoming = await friendRpc('Apply', { UserId: FRIEND_PUBLIC_ID });
+check(
+  'Friend:Apply reports an existing incoming request',
+  !!friendApplyIncoming.IsAlreadyOffered,
+);
+
+const friendReject = await friendRpc('Reject', { UserId: FRIEND_PUBLIC_ID });
+check('Friend:Reject removes the incoming request', !friendReject.IsOfferDeleted);
+check(
+  'Friend:ListApplied is empty after rejecting',
+  ((await friendList('ListApplied')).Profiles?.length ?? 0) === 0,
+);
+const friendRejectAgain = await friendRpc('Reject', { UserId: FRIEND_PUBLIC_ID });
+check('Friend:Reject reports a missing offer', !!friendRejectAgain.IsOfferDeleted);
+
+await insertPending(FRIEND_USER_ID, SERVER_USER_ID);
+const friendApprove = await friendRpc('Approve', { UserId: FRIEND_PUBLIC_ID });
+check('Friend:Approve accepts the request', !!friendApprove.Approved);
+const friendFriends = await friendList('List');
+check(
+  'Friend:List lists the new friend',
+  friendFriends.Profiles?.length === 1 && friendFriends.Profiles[0].UserId === FRIEND_PUBLIC_ID,
+);
+const profileTopWithFriend = decodeMessage(
+  msgRegistry.get(endpoints['Profile']['Top'].response)!,
+  new Reader(Uint8Array.from(await dispatchRpc('Profile:Top', Buffer.alloc(0), authOpts))),
+) as any;
+check(
+  'Profile:Top lists the new friend in FriendProfiles',
+  profileTopWithFriend.FriendProfiles?.length === 1 &&
+    profileTopWithFriend.FriendProfiles?.[0]?.UserId === FRIEND_PUBLIC_ID,
+);
+check(
+  'Friend:ListApplied is empty after approving',
+  ((await friendList('ListApplied')).Profiles?.length ?? 0) === 0,
+);
+const friendApproveAgain = await friendRpc('Approve', { UserId: FRIEND_PUBLIC_ID });
+check('Friend:Approve reports a missing offer', !!friendApproveAgain.IsOfferDeleted);
+const friendApplyFriend = await friendRpc('Apply', { UserId: FRIEND_PUBLIC_ID });
+check('Friend:Apply reports an existing friend', !!friendApplyFriend.IsAlreadyFriend);
+
+await friendRpc('Delete', { UserIds: [FRIEND_PUBLIC_ID] });
+check('Friend:Delete removes the friendship', ((await friendList('List')).Profiles?.length ?? 0) === 0);
+
+await friendRpc('Apply', { UserId: FRIEND_PUBLIC_ID });
+await friendList('CancelAll');
+check(
+  'Friend:CancelAll removes the outgoing requests',
+  ((await friendList('ListApplying')).Profiles?.length ?? 0) === 0,
+);
+
+await clearFriendLinks();
+await db.delete(players).where(eq(players.id, FRIEND_USER_ID));
+await db.delete(accounts).where(eq(accounts.id, FRIEND_ACCOUNT_ID));
+
 
 // --- Slice 13: card progression (uncaptured: schema-built, dbtest-validated) ---
 const inv = await import('./services/inventory.ts');
@@ -2663,6 +2866,58 @@ check('Photo:GetImageURL returns TmbUrl for Type=3', (urlResp.UrlList?.[0]?.TmbU
 
   const thumbUp = await uploadImage(`${objectName}_t`, thumb, 'application/octet-stream');
   check('storage thumbnail upload → 200', thumbUp.fin.status === 200);
+
+  // Another player may read a photo only while it is the owner's profile
+  // favourite (business cards are visible to other players).
+  {
+    const VIEWER_ACCOUNT_ID = 'dbtest-account-0000-4000-8000-000000000004';
+    const VIEWER_USER_ID = 'dbtest-user-0000-4000-8000-000000000004';
+    const VIEWER_UID = 'dbtest-firebase-uid-0004';
+    const VIEWER_PUBLIC_ID = 'DBTEST04';
+    await db.delete(players).where(eq(players.id, VIEWER_USER_ID));
+    await db.delete(accounts).where(eq(accounts.id, VIEWER_ACCOUNT_ID));
+    await db.insert(accounts).values({
+      id: VIEWER_ACCOUNT_ID,
+      firebaseUid: VIEWER_UID,
+      seedId: VIEWER_PUBLIC_ID,
+      displayName: 'Viewer',
+      lastLoginAt: new Date(),
+    });
+    await db.insert(players).values({
+      id: VIEWER_USER_ID,
+      accountId: VIEWER_ACCOUNT_ID,
+      name: 'Viewer',
+      data: { publicUserId: VIEWER_PUBLIC_ID },
+    });
+    const viewerToken = mintIdToken(VIEWER_UID, undefined, VIEWER_PUBLIC_ID);
+    const viewerGet = (name: string) =>
+      fetch(`${STORAGE}/${encodeURIComponent(name)}`, { headers: { authorization: `Firebase ${viewerToken}` } });
+    const profileBefore = await getSingleton(SERVER_USER_ID, 'Profile');
+    const setFavoritePhoto = (photoId: string) =>
+      putSingleton(SERVER_USER_ID, 'Profile', {
+        ...(profileBefore ?? { __msg: 'Solis.Common.Proto.Transaction.UserProfile' }),
+        FavoritePhotoId: photoId,
+      } as any);
+
+    await setFavoritePhoto('');
+    check('storage refuses another player reading a non-profile photo', (await viewerGet(objectName)).status === 403);
+    await setFavoritePhoto(String(created?.PhotoId ?? ''));
+    const shared = await viewerGet(objectName);
+    check(
+      'storage lets another player read the profile favourite photo',
+      shared.status === 200 && ((await shared.json()) as any).downloadTokens === orig.meta?.downloadTokens,
+    );
+    check('storage lets another player read its thumbnail', (await viewerGet(`${objectName}_t`)).status === 200);
+    check(
+      'storage still refuses another player uploading over it',
+      [401, 403].includes((await startUpload(objectName, viewerToken)).status),
+    );
+    await setFavoritePhoto('');
+    check('storage refuses again once the favourite changes', (await viewerGet(objectName)).status === 403);
+    if (profileBefore) await putSingleton(SERVER_USER_ID, 'Profile', profileBefore);
+    await db.delete(players).where(eq(players.id, VIEWER_USER_ID));
+    await db.delete(accounts).where(eq(accounts.id, VIEWER_ACCOUNT_ID));
+  }
 
   const urls = await callRpc('Photo:GetImageURL', 'Solis.Common.Proto.Api.PhotoGetImageUrlRequest', { Type: 3, AssetIds: [assetId] });
   const entry = urls.UrlList?.[0] ?? {};
