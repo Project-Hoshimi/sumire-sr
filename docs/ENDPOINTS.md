@@ -183,7 +183,7 @@ Levels are defined in [ROADMAP.md](../ROADMAP.md). `unrated` means a handler exi
 | Invite | EnterCode | missing |
 | Invite | ReceiveHostRewards | missing |
 | Invite | Top | missing |
-| Item | Sell | missing |
+| Item | Sell | sandbox-ok |
 | Ladder | ReachPanel | missing |
 | Ladder | Top | missing |
 | League | GetDailyDetail | missing |
@@ -438,4 +438,4 @@ Levels are defined in [ROADMAP.md](../ROADMAP.md). `unrated` means a handler exi
 | User | ProvideExternalReward | missing |
 | Warning | SetDisplayed | stub |
 
-**Totals:** 425 endpoints — 0 parity, 7 sandbox-ok, 9 stub, 200 unrated, 209 missing.
+**Totals:** 425 endpoints — 0 parity, 8 sandbox-ok, 9 stub, 200 unrated, 208 missing.

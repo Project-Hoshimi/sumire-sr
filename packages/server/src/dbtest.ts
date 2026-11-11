@@ -11,7 +11,7 @@ import '@sumire-sr/protocol/gen/registry.ts';
 import { verifyToken } from './auth/jwt.ts';
 import { db } from './db/client.ts';
 import { accounts, players, playerEntities, playerExcursionState, playerBirthdayState, rewardClaims, playerLedger, playerPurchases, playerLoveProgress, playerLessonProgress, playerGachaState, gachaHistory, idolRoster, ownedCards, deckConfigurations, liveStageProgress, playerBoxGacha, playerMarathonPoint, photoImageMetadata } from './db/schema.ts';
-import { masterCondition, masterPhotoQuestMusic, masterPhotoQuestStage, masterQuest } from './db/masterSchema.ts';
+import { masterCondition, masterItem, masterPhotoQuestMusic, masterPhotoQuestStage, masterQuest } from './db/masterSchema.ts';
 import { parseFirebaseUid } from './services/auth.ts';
 import { applyRewardRefs } from './master/reward.ts';
 import { mintIdToken } from './auth/firebaseTokens.ts';
@@ -1743,6 +1743,60 @@ check(
   enjoyRejectPoint === enjoyPointBefore + 150 &&
     (await getItemAmount(SERVER_USER_ID, 'item-enjoy-present-sp-ai')) === enjoyItemAfter,
 );
+
+// --- Item:Sell sells an owned item stack for gold ---
+const sellableItem = (await db.select().from(masterItem)).find((i) => Number(i.SalePrice ?? 0) > 0);
+check('Item:Sell test found a sellable master item', !!sellableItem);
+if (sellableItem) {
+  const sellId = sellableItem.Id;
+  const sellPrice = Number(sellableItem.SalePrice);
+  const sellItem = (amount: number) =>
+    callRpc('Item:Sell', 'Solis.Common.Proto.Api.ItemSellRequest', { ItemId: sellId, Amount: amount });
+  const goldOf = async () =>
+    Number((await db.select().from(players).where(eq(players.id, SERVER_USER_ID)).limit(1))[0]?.gold ?? 0);
+
+  await grantPromotionItem(SERVER_USER_ID, sellId, 5);
+  const sellOwned = await getItemAmount(SERVER_USER_ID, sellId);
+  const sellGoldBefore = await goldOf();
+
+  const sellResp = await sellItem(2);
+  check('Item:Sell reduces the stack', (await getItemAmount(SERVER_USER_ID, sellId)) === sellOwned - 2);
+  check('Item:Sell grants SalePrice per item', (await goldOf()) === sellGoldBefore + 2 * sellPrice);
+  check(
+    'Item:Sell reports the remaining stack in UpdatedData.Items',
+    Number(sellResp.CommonResponse?.UpdatedData?.Items?.[0]?.Amount ?? -1) === sellOwned - 2 &&
+      sellResp.CommonResponse?.UpdatedData?.Items?.[0]?.ItemId === sellId,
+  );
+  check(
+    'Item:Sell reports the gold total in UpdatedData.Points',
+    Number(
+      (sellResp.CommonResponse?.UpdatedData?.Points ?? []).find((p: any) => Number(p.PointType) === 1)?.Amount ?? -1,
+    ) === sellGoldBefore + 2 * sellPrice,
+  );
+
+  let sellTooManyThrew = false;
+  try {
+    await sellItem(sellOwned);
+  } catch {
+    sellTooManyThrew = true;
+  }
+  check('Item:Sell rejects selling more than owned', sellTooManyThrew);
+
+  let sellZeroThrew = false;
+  try {
+    await sellItem(0);
+  } catch {
+    sellZeroThrew = true;
+  }
+  check('Item:Sell rejects a non-positive amount', sellZeroThrew);
+
+  const sellAllResp = await sellItem(sellOwned - 2);
+  check('Item:Sell empties the stack', (await getItemAmount(SERVER_USER_ID, sellId)) === 0);
+  check(
+    'Item:Sell reports the emptied stack in DeletedData.Items',
+    sellAllResp.CommonResponse?.DeletedData?.Items?.[0]?.ItemId === sellId,
+  );
+}
 
 const costumeResp = await setCostume('cos-ai-idol-02', 'hair-ai-idol-02');
 const costumeChar = costumeResp.CommonResponse?.UpdatedData?.Characters?.[0];

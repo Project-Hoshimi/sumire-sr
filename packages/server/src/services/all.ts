@@ -14,6 +14,7 @@ import './shop.ts';
 import './market.ts';
 import './costume.ts';
 import './accessory.ts';
+import './item.ts';
 import './profile.ts';
 import './friend.ts';
 import './photo.ts';
