@@ -21,6 +21,7 @@ export const ENDPOINT_LEVELS: Readonly<Record<string, EndpointLevel>> = {
   'Home:Enter': 'sandbox-ok',
   'Home:Login': 'sandbox-ok',
   'Home:SetReview': 'stub',
+  'Item:Sell': 'sandbox-ok',
   'Master:Get': 'sandbox-ok',
   'Mission:Event': 'stub',
   'Mission:List': 'stub',
