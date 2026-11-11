@@ -195,7 +195,16 @@ function isZigzag(f: FieldShape): boolean { return f.zigzag === true; }
 // read one field value whose TAG has already been consumed
 function readValue(f: FieldShape, r: Reader): any {
   switch (wireOf(f)) {
-    case WT_VARINT: return isZigzag(f) ? r.readZigzag() : r.readVarint();
+    case WT_VARINT: {
+      if (isZigzag(f)) return r.readZigzag();
+      const v = r.readVarint();
+      // Negative int32/int64 travel as 64-bit two's complement; restore the sign.
+      if (typeof v === 'bigint' && v >= 1n << 63n && (f.label === 'int32' || f.label === 'int64')) {
+        const signed = v - (1n << 64n);
+        return signed >= -0x1fffffffffffffn ? Number(signed) : signed;
+      }
+      return v;
+    }
     case WT_FIXED32: return r.readFixed32();
     case WT_FIXED64: return r.readFixed64();
     case WT_LEN:
