@@ -44,6 +44,12 @@ export const ACK_STUBS: ReadonlyArray<{ name: string; responseMsg: string; hasCo
     todo: 'Should advance the post-profile mission (solis-server profile/clear_twitter_mission.go).',
   },
   {
+    name: 'Salary:GetPayslip',
+    responseMsg: 'Solis.Common.Proto.Api.SalaryGetPayslipResponse',
+    hasCommon: true,
+    todo: 'Returns no payslips. Needs the payroll port (solis-server makino/salary): attendance, monthly payslip, Salary:Pay.',
+  },
+  {
     name: 'Warning:SetDisplayed',
     responseMsg: 'Solis.Common.Proto.Api.WarningSetDisplayedResponse',
     hasCommon: true,

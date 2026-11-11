@@ -26,6 +26,7 @@ export const ENDPOINT_LEVELS: Readonly<Record<string, EndpointLevel>> = {
   'Mission:Event': 'stub',
   'Mission:List': 'stub',
   'Profile:ClearTwitterMission': 'stub',
+  'Salary:GetPayslip': 'stub',
   'System:Check': 'sandbox-ok',
   'User:Get': 'sandbox-ok',
   'Warning:SetDisplayed': 'stub',
