@@ -489,4 +489,27 @@ export const playerBirthdayState = pgTable('player_birthday_state', {
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 });
 
+/**
+ * Friend requests and friendships between two players. One row per pair:
+ * `pending` is a request from `fromPlayerId` to `toPlayerId`; `friend` is an
+ * accepted friendship (direction no longer matters). Rows go with the player.
+ */
+export const playerFriendLinks = pgTable(
+  'player_friend_links',
+  {
+    fromPlayerId: text('from_player_id')
+      .notNull()
+      .references(() => players.id, { onDelete: 'cascade' }),
+    toPlayerId: text('to_player_id')
+      .notNull()
+      .references(() => players.id, { onDelete: 'cascade' }),
+    status: text('status').$type<'pending' | 'friend'>().notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    uniqueIndex('player_friend_links_pair_idx').on(t.fromPlayerId, t.toPlayerId),
+    index('player_friend_links_to_idx').on(t.toPlayerId),
+  ],
+);
+
 export * from './masterSchema.ts';

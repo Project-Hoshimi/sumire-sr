@@ -3,12 +3,13 @@ import { constants as fsConstants } from 'node:fs';
 import { copyFile, link, mkdir, open, readFile, rename, rm, stat, utimes } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
-import { and, eq, inArray, lte, ne, or } from 'drizzle-orm';
+import { and, eq, inArray, lte, ne, or, sql } from 'drizzle-orm';
 import { config } from './config.ts';
 import { db } from './db/client.ts';
 import type { Executor } from './db/tx.ts';
 import { accounts, photoImageMetadata, players } from './db/schema.ts';
 import { verifyIdToken, FIREBASE_PROJECT_ID, SECURE_TOKEN_ISSUER } from './auth/firebaseTokens.ts';
+import { getSingleton, listElements } from './services/playerState.ts';
 
 /**
  * Firebase Storage emulation for photo images, ported from Solis
@@ -616,6 +617,15 @@ function sendUploadActive(reply: FastifyReply, uploadId: string, sizeReceived: n
 // Authentication (Solis authenticatePhotoOwner)
 
 async function authenticatePhotoOwner(req: FastifyRequest, publicUserId: string): Promise<PhotoOwner> {
+  return authenticatePhotoUser(req, publicUserId);
+}
+
+/**
+ * Authenticate the Firebase user behind a storage request. With
+ * `publicUserId` the caller must be that photo owner; with `null` any player
+ * of this server is accepted and returned (used for shared profile photos).
+ */
+async function authenticatePhotoUser(req: FastifyRequest, publicUserId: string | null): Promise<PhotoOwner> {
   const parts = header(req, 'authorization').split(/\s+/).filter(Boolean);
   if (parts.length !== 2 || parts[0].toLowerCase() !== 'firebase' || !parts[1]) {
     throw new HttpError(401, 'invalid Firebase authorization');
@@ -638,16 +648,42 @@ async function authenticatePhotoOwner(req: FastifyRequest, publicUserId: string)
     // such claim (the SDK caches them for up to an hour). Those are accepted on
     // the strength of the user_id → account lookup below; a present `puid`
     // must still match.
-    (tokenPublicUserId !== undefined && tokenPublicUserId !== publicUserId)
+    (publicUserId !== null && tokenPublicUserId !== undefined && tokenPublicUserId !== publicUserId)
   ) {
     throw new HttpError(401, 'invalid Firebase token claims');
   }
   const owner = await findPhotoOwnerByFirebaseUid(userId);
   if (!owner) throw new HttpError(401, 'retrieve photo owner by Firebase identity failed');
-  if (owner.publicUserId !== publicUserId || (tokenPublicUserId !== undefined && owner.publicUserId !== tokenPublicUserId)) {
+  if (tokenPublicUserId !== undefined && owner.publicUserId !== tokenPublicUserId) {
+    throw new HttpError(403, 'photo owner mismatch');
+  }
+  if (publicUserId !== null && owner.publicUserId !== publicUserId) {
     throw new HttpError(403, 'photo owner mismatch');
   }
   return owner;
+}
+
+/**
+ * Whether `filename` is the image (or thumbnail) of the favourite photo on
+ * that player's profile. A business card is visible to every player of the server (friend
+ * lists, user search), so its photo may be read by other players; every other
+ * photo stays owner-only.
+ */
+async function isProfileFavoritePhoto(publicUserId: string, filename: string): Promise<boolean> {
+  const [pl] = await db
+    .select()
+    .from(players)
+    .where(sql`${players.data}->>'publicUserId' = ${publicUserId}`)
+    .limit(1);
+  if (!pl) return false;
+  const profile = await getSingleton(pl.id, 'Profile');
+  const favoritePhotoId = String(profile?.FavoritePhotoId ?? '');
+  if (!favoritePhotoId) return false;
+  const photo = (await listElements(pl.id, 'Photos')).find((p) => String(p.PhotoId ?? '') === favoritePhotoId);
+  if (!photo) return false;
+  const assetId = String(photo.AssetId ?? '');
+  // `<asset>_t` is the same photo's thumbnail.
+  return assetId !== '' && (filename === assetId || filename === `${assetId}_t`);
 }
 
 // ---------------------------------------------------------------------------
@@ -999,7 +1035,17 @@ async function getPhoto(req: FastifyRequest, reply: FastifyReply) {
     const responseType = query.get('alt') ?? '';
     if (responseType !== '' && responseType !== 'media') throw new HttpError(400, 'invalid alternate response type');
     let owner: PhotoOwner | null = null;
-    if (responseType === '') owner = await authenticatePhotoOwner(req, name.publicUserId);
+    let sharedProfilePhoto = false;
+    if (responseType === '') {
+      const viewer = await authenticatePhotoUser(req, null);
+      if (viewer.publicUserId === name.publicUserId) {
+        owner = await authenticatePhotoOwner(req, name.publicUserId);
+      } else if (await isProfileFavoritePhoto(name.publicUserId, name.filename)) {
+        sharedProfilePhoto = true;
+      } else {
+        throw new HttpError(403, 'photo owner mismatch');
+      }
+    }
 
     const unlock = await lockPhotoObject(name.name);
     try {
@@ -1010,7 +1056,10 @@ async function getPhoto(req: FastifyRequest, reply: FastifyReply) {
         if (token === '' || token !== metadata.downloadTokens) throw new HttpError(403, 'invalid download token');
         return await sendPhotoImage(req, reply, name, metadata);
       }
-      if (!owner || metadata.playerId !== owner.serverUserId || metadata.publicUserId !== owner.publicUserId) {
+      if (
+        !sharedProfilePhoto &&
+        (!owner || metadata.playerId !== owner.serverUserId || metadata.publicUserId !== owner.publicUserId)
+      ) {
         throw new HttpError(403, 'photo owner mismatch');
       }
       return sendMetadata(reply, newFirebaseUploadId(), '', metadata);

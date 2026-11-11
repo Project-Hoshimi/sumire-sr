@@ -140,16 +140,16 @@ Levels are defined in [ROADMAP.md](../ROADMAP.md). `unrated` means a handler exi
 | Forum | ListThreadReply | missing |
 | Forum | SendThreadReply | missing |
 | Forum | UnbookmarkThread | missing |
-| Friend | Apply | missing |
-| Friend | Approve | missing |
-| Friend | Cancel | missing |
-| Friend | CancelAll | missing |
-| Friend | Delete | missing |
-| Friend | List | missing |
-| Friend | ListApplied | missing |
-| Friend | ListApplying | missing |
-| Friend | Reject | missing |
-| Friend | Search | missing |
+| Friend | Apply | sandbox-ok |
+| Friend | Approve | sandbox-ok |
+| Friend | Cancel | sandbox-ok |
+| Friend | CancelAll | unrated |
+| Friend | Delete | sandbox-ok |
+| Friend | List | sandbox-ok |
+| Friend | ListApplied | sandbox-ok |
+| Friend | ListApplying | sandbox-ok |
+| Friend | Reject | sandbox-ok |
+| Friend | Search | unrated |
 | Gacha | Draw | unrated |
 | Gacha | Exchange | unrated |
 | Gacha | History | unrated |
@@ -308,7 +308,7 @@ Levels are defined in [ROADMAP.md](../ROADMAP.md). `unrated` means a handler exi
 | PhotoPanorama | CreateShootings | unrated |
 | PhotoPanorama | List | unrated |
 | Profile | ClearTwitterMission | stub |
-| Profile | FindUser | missing |
+| Profile | FindUser | sandbox-ok |
 | Profile | Top | unrated |
 | Profile | UpdateBackground | unrated |
 | Profile | UpdateBirthday | unrated |
@@ -438,4 +438,4 @@ Levels are defined in [ROADMAP.md](../ROADMAP.md). `unrated` means a handler exi
 | User | ProvideExternalReward | missing |
 | Warning | SetDisplayed | stub |
 
-**Totals:** 425 endpoints — 0 parity, 8 sandbox-ok, 10 stub, 200 unrated, 207 missing.
+**Totals:** 425 endpoints — 0 parity, 17 sandbox-ok, 10 stub, 202 unrated, 196 missing.

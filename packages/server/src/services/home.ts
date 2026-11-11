@@ -32,6 +32,7 @@ import { isSandboxBlockedGacha } from '../profiles/sandbox/showcase.ts';
 import { sandboxEventStoryInfos } from '../profiles/sandbox/story.ts';
 import { sandboxHomeShelfInfo, sandboxShelfButton } from '../profiles/sandbox/shelf.ts';
 import { reconcileNarrative } from './narrative.ts';
+import { countIncoming } from './friendLinks.ts';
 
 const LOVE_INFO_MSG = 'Solis.Common.Proto.Api.HomeLoveInfo';
 const EVENT_INFO_MSG = 'Solis.Common.Proto.Api.HomeEventInfo';
@@ -151,8 +152,8 @@ function applySandboxHomeButtons(body: any): void {
   // Shop ids the client hasn't seen show a "NEW" tag on the Shop button.
   body.ShopIds = [];
   body.ShowcaseToyShopIds = [];
-  // Every diary page is served as read, and friend requests are never listed,
-  // so neither the diary nor the profile's Requests button gets a "!" badge.
+  // Every diary page is served as read, so the diary gets no "!" badge; the
+  // friend request count defaults to zero and the caller fills in the real one.
   body.IsRemainingDiary = false;
   body.FriendAppliedCount = 0;
   // Unclaimed achievement rank rewards light the Task badge; Tasks are blocked too.
@@ -240,6 +241,7 @@ register('Home:Enter', async (ctx) => {
       if (pl && !isSandbox()) await applyPlayerActivityCatalogs(body, pl.id);
       await applySandboxEvents(body);
       applySandboxHomeButtons(body);
+      if (pl) body.FriendAppliedCount = await countIncoming(pl.id);
       await dropSandboxToyGachas(body);
       if (pl) await applyBirthdayToHomeEnter(body, pl.id);
       applyNarrative(body, narrative, true);
@@ -277,6 +279,7 @@ register('Home:Enter', async (ctx) => {
   if (pl && !isSandbox()) await applyPlayerActivityCatalogs(decoded, pl.id);
   await applySandboxEvents(decoded);
   applySandboxHomeButtons(decoded);
+  if (pl) decoded.FriendAppliedCount = await countIncoming(pl.id);
   await dropSandboxToyGachas(decoded);
   if (pl) await applyBirthdayToHomeEnter(decoded, pl.id);
   applyNarrative(decoded, narrative, false);
