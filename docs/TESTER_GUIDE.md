@@ -68,6 +68,7 @@ cd sumire-sr
 npm install
 cp .env.example .env
 
+# No `docker compose` plugin? Use the standalone `docker-compose` instead.
 docker compose up -d postgres
 npm run data:fetch
 npm run -w packages/server db:migrate

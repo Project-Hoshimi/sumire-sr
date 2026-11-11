@@ -60,7 +60,7 @@ function loadOrCreateKeys(): { privateKeyPem: string; publicKeyPem: string } {
       '[jwt] before this moment is now invalid and clients must log in again.',
       '[jwt] Keep this file (git-ignored) stable across restarts and point all',
       '[jwt] server processes at the same key via JWT_PRIVATE_KEY_PATH — see',
-      '[jwt] fastify-api/.env.example.',
+      '[jwt] .env.example.',
       '[jwt] ==================================================================',
       '',
     ].join('\n'),

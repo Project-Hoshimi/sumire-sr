@@ -15,6 +15,7 @@ cp .env.example .env
 # .env.example already contains the static client WIRE_SEC_KEY and points
 # SUMIRE_DATA_DIR at ./data, which `npm run data:fetch` fills.
 
+# No `docker compose` plugin? Use the standalone `docker-compose` instead.
 docker compose up -d postgres
 npm run data:fetch
 npm run -w packages/server db:migrate
