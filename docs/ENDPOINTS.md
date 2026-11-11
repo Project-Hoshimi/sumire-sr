@@ -354,7 +354,7 @@ Levels are defined in [ROADMAP.md](../ROADMAP.md). `unrated` means a handler exi
 | Roulette | Check | missing |
 | Roulette | Draw | missing |
 | Roulette | Top | missing |
-| Salary | GetPayslip | missing |
+| Salary | GetPayslip | stub |
 | Salary | Pay | missing |
 | Satellite | InitCode | missing |
 | Shelf | AlbumTop | unrated |
@@ -438,4 +438,4 @@ Levels are defined in [ROADMAP.md](../ROADMAP.md). `unrated` means a handler exi
 | User | ProvideExternalReward | missing |
 | Warning | SetDisplayed | stub |
 
-**Totals:** 425 endpoints — 0 parity, 8 sandbox-ok, 9 stub, 200 unrated, 208 missing.
+**Totals:** 425 endpoints — 0 parity, 8 sandbox-ok, 10 stub, 200 unrated, 207 missing.
