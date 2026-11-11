@@ -25,11 +25,11 @@ Feature work is prioritised with community feedback through GitHub Discussions p
 | `client/` | Frida scripts and emulator helpers used to point the game client at a server. |
 | `docs/` | Curated documentation, including the generated endpoint status. |
 
-Stack: Node.js 22+, Fastify 5, PostgreSQL 18, Drizzle ORM. There is intentionally no Redis, no gRPC server framework, and no FastAPI.
+Stack: Node.js 22.18+, Fastify 5, PostgreSQL 18, Drizzle ORM. There is intentionally no Redis, no gRPC server framework, and no FastAPI.
 
 ## Quickstart
 
-Requirements: Node.js 22+, npm, git, and Docker (for PostgreSQL).
+Requirements: Node.js 22.18 or newer, npm, git, and Docker with Compose (for PostgreSQL). If your Docker has no `docker compose` plugin, use the standalone `docker-compose` command wherever `docker compose` appears below.
 
 ```sh
 git clone https://github.com/project-hoshimi/sumire-sr.git
@@ -54,10 +54,17 @@ Testing rather than developing? See the [tester guide](docs/TESTER_GUIDE.md).
 To run the server in the container instead of on the host:
 
 ```sh
-docker compose up
+cp .env.example .env
+docker compose up -d
+docker compose exec server npm run data:fetch
+docker compose exec server npm run -w packages/server db:migrate
+docker compose exec server npm run -w packages/server db:seed-master
+docker compose restart server
 ```
 
-The compose stack publishes the server on port `8080` and PostgreSQL on port `5432`. See `docker-compose.yml` and `.env.example` for the full set of settings.
+`docker compose up` only starts PostgreSQL and the server; it does not fetch game data, run migrations or seed the master tables, so a fresh clone needs the `exec` steps once. The devcontainer uses the same `server` service, so run the same three `npm run` commands in its terminal after it opens.
+
+The compose stack publishes the server on port `8080` and PostgreSQL on port `5432`. If either port is already taken on your machine (a local PostgreSQL, for example), stop that service or remap the port in a compose override file. See `docker-compose.yml` and `.env.example` for the full set of settings.
 
 ### Game data
 
