@@ -1,5 +1,5 @@
 import { eq } from 'drizzle-orm';
-import { register } from './handlers.ts';
+import { register, type RpcContext } from './handlers.ts';
 import { db } from '../db/client.ts';
 import { withPlayerTx } from '../db/tx.ts';
 import { players, playerEntities } from '../db/schema.ts';
@@ -14,6 +14,34 @@ const COMMON_RESPONSE_MSG = 'Solis.Common.Proto.Api.CommonResponse';
 const UPDATED_DATA_MSG = 'Solis.Common.Proto.Api.UpdatedData';
 const DECK_DELETE_RESPONSE_MSG = 'Solis.Common.Proto.Api.DeckDeleteResponse';
 const DELETED_DATA_MSG = 'Solis.Common.Proto.Api.DeletedData';
+const DECK_POSITIONS_INVALID_MSG = 'Deck:Save: deck positions and cards must be unique, with positions in 1..5';
+
+/**
+ * Checks the positions a `Deck:Save` request builds. Returns the error message
+ * when there are more than 5 entries, a Position that is not an integer in
+ * 1..5, two entries with the same Position, or two entries with the same
+ * non-empty CardId. Entries with an empty CardId are allowed. Returns null when
+ * the positions are valid.
+ */
+export function validateDeckPositions(positions: Decoded[]): string | null {
+  if (positions.length > 5) return DECK_POSITIONS_INVALID_MSG;
+  const seenPositions = new Set<number>();
+  const seenCards = new Set<string>();
+  for (const p of positions) {
+    const position = p.Position;
+    if (typeof position !== 'number' || !Number.isInteger(position) || position < 1 || position > 5) {
+      return DECK_POSITIONS_INVALID_MSG;
+    }
+    if (seenPositions.has(position)) return DECK_POSITIONS_INVALID_MSG;
+    seenPositions.add(position);
+    const cardId = p.CardId ? String(p.CardId) : '';
+    if (cardId) {
+      if (seenCards.has(cardId)) return DECK_POSITIONS_INVALID_MSG;
+      seenCards.add(cardId);
+    }
+  }
+  return null;
+}
 
 /**
  * `Deck:Save` — server-authoritative. Persists the client's submitted deck name
@@ -21,10 +49,11 @@ const DELETED_DATA_MSG = 'Solis.Common.Proto.Api.DeletedData';
  * `Decks`/`DeckPositions` in `CommonResponse.UpdatedData`. Replaces the captured
  * replay response, so any deck (not just the one in the corpus) is editable.
  */
-register('Deck:Save', async (ctx) => {
-  const req = ctx.request;
-  if (!req) throw new Error('Deck:Save: missing request');
-
+/**
+ * Body of `Deck:Save`, exported so Marathon:SaveDeck can reuse it unchanged.
+ * `req` carries `Number`, `Name` and `UserDeckPositions`.
+ */
+export async function saveDeckRequest(ctx: RpcContext, req: Decoded): Promise<Decoded> {
   const accountId = ctx.auth.ok ? ctx.auth.claims?.sub : undefined;
   if (!accountId) throw new Error('Deck:Save: unauthenticated');
   const [pl] = await db.select().from(players).where(eq(players.accountId, accountId)).limit(1);
@@ -58,18 +87,28 @@ register('Deck:Save', async (ctx) => {
     });
   }
 
-  const { number, name, user } = await withPlayerTx(pl.id, async (tx) => {
+  const invalid = validateDeckPositions(positions);
+  if (invalid) throw new RpcError(invalid, GRPC_STATUS.INVALID_ARGUMENT);
+
+  const { number, name, user, removed } = await withPlayerTx(pl.id, async (tx) => {
     const alloc = requested === 0 ? await allocateDeckNumber(pl.id, tx) : { number: requested, user: null };
     // The client normally sends the name; the reference server falls back to
     // this one when it is empty.
     const deckName = requested === 0 && submittedName === '' ? `ユニット${alloc.number}` : submittedName;
     for (const p of positions) p.Number = alloc.number;
-    await saveDeck(pl.id, { Number: alloc.number, Name: deckName }, positions, tx);
-    return { number: alloc.number, name: deckName, user: alloc.user };
+    const removedPositions = await saveDeck(pl.id, { Number: alloc.number, Name: deckName }, positions, tx);
+    return { number: alloc.number, name: deckName, user: alloc.user, removed: removedPositions };
   });
 
   ctx.fastifyReq.log.info(
-    { accountId, serverUserId: pl.id, deckNumber: number, positions: positions.length },
+    {
+      accountId,
+      serverUserId: pl.id,
+      deckNumber: number,
+      positions: positions.length,
+      slots: positions.map((p) => `${p.Position}:${p.CardId ?? ''}`),
+      removed,
+    },
     'deck save (server-authoritative)',
   );
 
@@ -85,8 +124,23 @@ register('Deck:Save', async (ctx) => {
         Decks: [{ __msg: USER_DECK_MSG, Number: number, Name: name }],
         DeckPositions: positions,
       },
+      // Slots the save vacated: the client drops them so the card is not shown twice.
+      ...(removed.length > 0
+        ? {
+            DeletedData: {
+              __msg: DELETED_DATA_MSG,
+              DeckPositions: removed.map((position) => ({ __msg: DECK_POSITION_MSG, Number: number, Position: position })),
+            },
+          }
+        : {}),
     },
   } as Decoded;
+}
+
+register('Deck:Save', async (ctx) => {
+  const req = ctx.request;
+  if (!req) throw new Error('Deck:Save: missing request');
+  return saveDeckRequest(ctx, req);
 }, { ownsState: true });
 
 /**

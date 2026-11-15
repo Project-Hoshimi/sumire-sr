@@ -50,6 +50,7 @@ import {
 } from '../master/index.ts';
 import { MoodType, PhotoAbilityType, StatusEffectType } from '../live/enums.ts';
 import { conversionStatusEfficacyType } from '../live/compile.ts';
+import { maxActorSkills } from '../live/engine.ts';
 import {
   applyGrants,
   addManagerExp,
@@ -57,6 +58,7 @@ import {
 } from '../master/reward.ts';
 import { cardReleaseForCard } from './cardRelease.ts';
 import { getSingleton, listElements, putElements, findPlayerByAccountId } from './playerState.ts';
+import { npcRosterQuestId, scaleOpponentToLevel } from './opponent.ts';
 import {
   AllocateAudience,
   ExtraCharacterIDs,
@@ -657,6 +659,119 @@ export function addLiveBonus(bonus: Map<number, number>, key: number, value: num
   bonus.set(key, current + value);
 }
 
+/**
+ * Extra live-scoring effects for the player's deck (e.g. owned marathon live
+ * bonuses). Routed exactly like a card's own live ability: the wire
+ * `LiveAbility` type is mapped through `liveAbilityPhotoType` and accumulated
+ * with `addLiveBonus`, so the values land in each card's `Bonuses`.
+ */
+export type LiveDeckBonusEffect = { type: number; value: number };
+
+/**
+ * Add deck-wide effects to one card-bonus map. Types the live-ability routing
+ * does not support (passive skills, equipment boosts, unknown ids) are skipped
+ * and reported once each through `skipped` instead of failing the live.
+ */
+export function addLiveDeckBonuses(
+  bonus: Map<number, number>,
+  effects: readonly LiveDeckBonusEffect[],
+): { applied: number; skipped: number[] } {
+  const skipped = new Set<number>();
+  let applied = 0;
+  for (const effect of effects) {
+    const [photoType, ok] = liveAbilityPhotoType(effect.type);
+    if (!ok) {
+      skipped.add(effect.type);
+      continue;
+    }
+    addLiveBonus(bonus, photoType, effect.value);
+    applied++;
+  }
+  return { applied, skipped: [...skipped] };
+}
+
+/**
+ * Extra bonus skills for the player's deck (e.g. owned marathon live bonuses of
+ * type 13). These are deck-level event bonuses, not card possessions: they are
+ * appended to the player `UserDeck.BonusSkills` list once per owned copy and
+ * reach the engine through the synthetic stage-bonus actor.
+ *
+ * `skillLevel` is the `LiveAbility.Levels[].Value` of the selected row, and
+ * `amount` is the number of owned copies (each copy adds one entry, matching one
+ * owned copy in the owned path).
+ */
+export type LiveBonusSkillEffect = {
+  skillId: string;
+  skillLevel: number;
+  amount: number;
+  liveAbilityId?: string;
+  liveAbilityLevel?: number;
+};
+
+/**
+ * First index used for marathon deck bonus skills. Quest live bonuses occupy
+ * `3001 + i` (`prepareLiveQuestBonus`), so this range stays clear of them.
+ * `engine.addActor` rejects duplicate indices within one actor, and
+ * `skills.passives` keys its per-event budget as `actor.index * 10000 + Index`
+ * for synthetic (BonusSkills) actors, so every appended entry needs a unique
+ * index. The helper also skips an occupied index as a safety net.
+ */
+export const BONUS_SKILL_MARATHON_INDEX_BASE = 4001;
+
+/**
+ * Append deck-level bonus skills to the player's `UserDeck.BonusSkills` list, one
+ * entry per owned copy. Effects without a skill id or with a non-positive amount
+ * are skipped and counted instead of failing the live.
+ *
+ * The engine registers the whole list as one synthetic actor and rejects more
+ * than `maxActorSkills` refs (`engine.ts` `addActor` throws 'too many live
+ * skills'), so entries are appended in effect order only until the list reaches
+ * `maxEntries` (default `maxActorSkills`). Copies that no longer fit are counted
+ * in `dropped` instead of failing the live.
+ */
+export function addBonusSkillPassives(
+  skills: LiveDeckCardSkill[],
+  effects: readonly LiveBonusSkillEffect[],
+  indexBase: number = BONUS_SKILL_MARATHON_INDEX_BASE,
+  maxEntries: number = maxActorSkills,
+): { applied: number; skipped: number; dropped: number } {
+  const used = new Set<number>();
+  for (const skill of skills) used.add(n(skill.Index));
+  let next = Math.trunc(n(indexBase)) || BONUS_SKILL_MARATHON_INDEX_BASE;
+  let applied = 0;
+  let skipped = 0;
+  let dropped = 0;
+  for (const effect of effects) {
+    const amount = Math.trunc(n(effect.amount));
+    const skillId = s(effect.skillId);
+    const skillLevel = Math.trunc(n(effect.skillLevel));
+    if (amount <= 0 || skillId === '' || skillLevel <= 0) {
+      skipped++;
+      continue;
+    }
+    for (let copy = 0; copy < amount; copy++) {
+      if (skills.length >= maxEntries) {
+        dropped++;
+        continue;
+      }
+      while (used.has(next)) next += 1;
+      const index = next;
+      used.add(index);
+      next += 1;
+      skills.push({
+        Index: index,
+        SkillId: skillId,
+        SkillLevel: skillLevel,
+        PossessionType: POSSESSION.Quest,
+        LiveAbilityId: s(effect.liveAbilityId),
+        LiveAbilityLevel: n(effect.liveAbilityLevel),
+      });
+      applied++;
+    }
+  }
+  return { applied, skipped, dropped };
+}
+
 /** Port of Solis `ApplyLiveCardStats`. */
 export function applyLiveCardStats(card: LiveDeckCard, bonus: Map<number, number>): void {
   const row = card as Record<string, unknown>;
@@ -1254,6 +1369,49 @@ async function playerPublicUserId(playerId: string, exec: Executor): Promise<str
   return data?.publicUserId ?? playerId;
 }
 
+export type PrepareLiveInputOptions = {
+  /**
+   * Deck-wide live effects added to every player deck card on top of the card's
+   * own owned live abilities, before the card stat pass, so parameter effects
+   * (types 1-12) change the card attributes. Omitted means no change.
+   */
+  extraDeckBonuses?: LiveDeckBonusEffect[];
+  /**
+   * Deck-level event bonus skills (type 13, e.g. marathon passives) appended to
+   * the player's `UserDeck.BonusSkills` after the quest live bonuses, one entry
+   * per owned copy. They are not attached to the deck cards. Omitted means no
+   * change.
+   */
+  extraBonusSkills?: LiveBonusSkillEffect[];
+  /**
+   * Roster key for a versus stage (`ClearScore` 0). Defaults to the quest id; a
+   * marathon catalog maps its own quest ids to an existing roster key here.
+   */
+  npcRosterId?: string;
+  /**
+   * Optional difficulty level for the loaded NPC roster. When set, the roster's
+   * authored manager and card levels are replaced by this value. Omitted keeps
+   * the authored levels.
+   */
+  npcLevel?: number;
+  /**
+   * Optional mutable out-parameter the call fills in. It is not part of the live
+   * input; callers read it after `prepareLiveInput` returns, e.g. to warn that
+   * marathon bonus skills were cut by the engine's per-actor skill cap.
+   */
+  report?: PrepareLiveInputReport;
+};
+
+/** Counters filled into `PrepareLiveInputOptions.report`. */
+export type PrepareLiveInputReport = {
+  /**
+   * Bonus-skill copies not appended because the player's `UserDeck.BonusSkills`
+   * already held `maxActorSkills` entries (quest live bonuses plus earlier
+   * marathon copies). The engine would otherwise throw 'too many live skills'.
+   */
+  droppedBonusSkills: number;
+};
+
 /**
  * Port of Solis `PrepareLiveInput`: resolve every user/master reference for one
  * live inside the caller's snapshot transaction. Performs no writes.
@@ -1265,6 +1423,7 @@ export async function prepareLiveInput(
   seed: bigint,
   formation: LiveFormation | null,
   exec: Executor = db,
+  options?: PrepareLiveInputOptions,
 ): Promise<Input> {
   if (q === null || req === null || n(req.DeckNumber) <= 0) {
     throw new LivePreconditionError('a quest and saved deck are required');
@@ -1286,9 +1445,12 @@ export async function prepareLiveInput(
   let npc: QuestOpponentInfo | null = null;
   if (n(q.ClearScore) === 0) {
     try {
-      npc = NPCRoster(s(q.Id)) as unknown as QuestOpponentInfo;
+      npc = NPCRoster(npcRosterQuestId(s(q.Id), options?.npcRosterId)) as unknown as QuestOpponentInfo;
     } catch (error) {
       failed((error as Error).message);
+    }
+    if (options?.npcLevel !== undefined) {
+      npc = scaleOpponentToLevel(npc as Decoded, options.npcLevel) as unknown as QuestOpponentInfo;
     }
     for (const info of npc!.CardInfos ?? []) cardIDs.add(s(info.CardId));
   }
@@ -1303,6 +1465,9 @@ export async function prepareLiveInput(
   // levels are derived in services/company.ts), so no company ratio bonus.
   const { bonuses: global, passives: globalPassives, equipment: equipmentBoost } =
     await prepareOwnedLiveAbilities(owned, q, exec);
+  // Deck-wide effects join the owned-ability bonus map before any card copies
+  // it, so `applyLiveCardStats` sees them as if they were the card's own.
+  if (options?.extraDeckBonuses !== undefined) addLiveDeckBonuses(global, options.extraDeckBonuses);
   const userRow = (await getSingleton(playerId, 'User', exec)) ?? ({} as Decoded);
   const self: LiveUserInfo = {
     Index: 1,
@@ -1432,6 +1597,21 @@ export async function prepareLiveInput(
     input.Cards.set(index, data);
   }
   await prepareLiveQuestBonus(input, exec);
+  // Deck-level event bonus skills (marathon passives) belong to the player's
+  // BonusSkills, not to every card's owned-passive list, and never to the NPC
+  // side. Appending after the quest bonuses keeps their 3001+ indices clear;
+  // this must run before `resolveLiveSkills` so the skill definitions load.
+  // The engine treats the whole list as one synthetic actor and rejects more
+  // than `maxActorSkills` refs, so the append stops at the cap.
+  let droppedBonusSkills = 0;
+  if (options?.extraBonusSkills !== undefined && options.extraBonusSkills.length > 0) {
+    const player = input.Users[0];
+    if (player?.UserDeck !== undefined && player.UserDeck !== null) {
+      player.UserDeck.BonusSkills = player.UserDeck.BonusSkills ?? [];
+      droppedBonusSkills = addBonusSkillPassives(player.UserDeck.BonusSkills, options.extraBonusSkills).dropped;
+    }
+  }
+  if (options?.report !== undefined) options.report.droppedBonusSkills = droppedBonusSkills;
   await resolveLiveSkills(input, exec);
   const actors: CardData[] = [];
   const deckCards: LiveDeckCard[] = [];

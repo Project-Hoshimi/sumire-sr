@@ -214,26 +214,26 @@ Levels are defined in [ROADMAP.md](../ROADMAP.md). `unrated` means a handler exi
 | Love | Top | unrated |
 | Love | UpdateName | unrated |
 | Love | UpdateSaveName | unrated |
-| Marathon | BuddyDeck | missing |
+| Marathon | BuddyDeck | stub |
 | Marathon | CheckRaidProgress | missing |
-| Marathon | DrawBoxGacha | missing |
+| Marathon | DrawBoxGacha | stub |
 | Marathon | FinishRaid | missing |
 | Marathon | GetRaidHistoryDetail | missing |
 | Marathon | JoinRaid | missing |
-| Marathon | ListDeck | missing |
-| Marathon | ListQuestAsset | missing |
+| Marathon | ListDeck | stub |
+| Marathon | ListQuestAsset | stub |
 | Marathon | ListRaid | missing |
 | Marathon | ListRaidDeck | missing |
 | Marathon | ListRaidHistory | missing |
 | Marathon | ListRaidRanking | missing |
-| Marathon | ResetBoxGacha | missing |
-| Marathon | SaveDeck | missing |
+| Marathon | ResetBoxGacha | stub |
+| Marathon | SaveDeck | stub |
 | Marathon | SaveRaidDeck | missing |
-| Marathon | StartQuest | missing |
+| Marathon | StartQuest | stub |
 | Marathon | StartRaid | missing |
-| Marathon | Top | missing |
-| Marathon | UnlockQuest | missing |
-| Marathon | UseQuestStaminaRecoveryItem | missing |
+| Marathon | Top | stub |
+| Marathon | UnlockQuest | stub |
+| Marathon | UseQuestStaminaRecoveryItem | stub |
 | Marathon | UseRaidStaminaRecoveryItem | missing |
 | Market | ListItem | unrated |
 | Market | Purchase | unrated |
@@ -334,7 +334,7 @@ Levels are defined in [ROADMAP.md](../ROADMAP.md). `unrated` means a handler exi
 | Quest | ListMain | unrated |
 | Quest | ListTower | missing |
 | Quest | ListTowerRanking | missing |
-| Quest | OutputLiveResultDetailLog | missing |
+| Quest | OutputLiveResultDetailLog | stub |
 | Quest | Start | unrated |
 | Quest | StartBulkDaily | missing |
 | Quest | Top | unrated |
@@ -438,4 +438,4 @@ Levels are defined in [ROADMAP.md](../ROADMAP.md). `unrated` means a handler exi
 | User | ProvideExternalReward | missing |
 | Warning | SetDisplayed | stub |
 
-**Totals:** 425 endpoints — 0 parity, 17 sandbox-ok, 10 stub, 202 unrated, 196 missing.
+**Totals:** 425 endpoints — 0 parity, 17 sandbox-ok, 21 stub, 202 unrated, 185 missing.
