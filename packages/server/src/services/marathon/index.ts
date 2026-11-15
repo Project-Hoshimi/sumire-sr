@@ -1,10 +1,11 @@
 /**
  * Marathon event endpoints.
  *
- * The event itself is opt-in and server-authored (`SUMIRE_MARATHON_ID`, see
- * `catalog.ts`). This first slice advertises it on Home:Enter and answers
- * `Marathon:Top` from the authored config plus the event master tables. It was
- * built without recorded traffic, so it is registered as a `stub`.
+ * The event comes from the DB-backed event registry (`openMarathons`,
+ * `marathonConfig`); `SUMIRE_MARATHON_ID` is a development override. This first
+ * slice advertises the open events on Home:Enter and answers `Marathon:Top`
+ * from the authored config plus the event master tables. It was built without
+ * recorded traffic, so it is registered as a `stub`.
  */
 import MarathonTopResponse from '@sumire-sr/protocol/gen/Solis_Common_Proto_Api_MarathonTopResponse.ts';
 import type { Decoded } from '@sumire-sr/protocol/runtime/proto.ts';
@@ -14,9 +15,9 @@ import { db } from '../../db/client.ts';
 import { withPlayerTx } from '../../db/tx.ts';
 import { listMarathonBoxGachaSettings, listMarathonQuests } from '../../master/index.ts';
 import {
-  activeMarathon,
   marathonConfig,
-  marathonWindow,
+  marathonWindowFor,
+  openMarathons,
   type MarathonConfig,
   type MarathonWindow,
 } from './catalog.ts';
@@ -34,22 +35,22 @@ const MARATHON_INFO_MSG = 'Solis.Common.Proto.Api.MarathonInfo';
 const USER_MARATHON_INFO_MSG = 'Solis.Common.Proto.Api.UserMarathonInfo';
 
 /**
- * Advertise the active authored event on Home:Enter, under every profile.
+ * Advertise the open authored events on Home:Enter, under every profile.
  * Call it after `applySandboxEvents` so the sandbox path does not wipe it.
- * With `SUMIRE_MARATHON_ID` unset this is a no-op, so the default response is
- * byte-for-byte unchanged. Other EventInfo fields are preserved.
+ * With no open event (and no `SUMIRE_MARATHON_ID` override) this is a no-op, so
+ * the default response is byte-for-byte unchanged. Other EventInfo fields are
+ * preserved.
  */
 export function applyActiveMarathonToHomeEnter(decoded: Decoded): void {
-  const config = activeMarathon();
-  if (!config) return;
+  const marathons = openMarathons(Date.now());
+  if (marathons.length === 0) return;
 
-  const window = marathonWindow(Date.now());
   const eventInfo =
     decoded.EventInfo !== null && typeof decoded.EventInfo === 'object'
       ? (decoded.EventInfo as Decoded)
       : ({ __msg: EVENT_INFO_MSG } as Decoded);
 
-  eventInfo.MarathonInfos = [homeMarathonInfo(config, window)];
+  eventInfo.MarathonInfos = marathons.map(({ config, window }) => homeMarathonInfo(config, window));
   decoded.EventInfo = eventInfo;
 }
 
@@ -93,11 +94,13 @@ register('Marathon:Top', async (ctx) => {
   const config = marathonId === '' ? undefined : marathonConfig(marathonId);
   if (!config) throw new Error(`Marathon:Top: unknown marathon ${marathonId}`);
 
+  const now = Date.now();
+  const window = marathonWindowFor(marathonId, now);
+  if (!window) throw new Error(`Marathon:Top: marathon ${marathonId} is not open`);
+
   const player = await playerForAccount(accountId, 'Marathon:Top');
   const point = await marathonPoints(player.id, marathonId);
 
-  const now = Date.now();
-  const window = marathonWindow(now);
   const state = await loadMarathonState(player.id, config, now);
 
   const marathonInfo = {

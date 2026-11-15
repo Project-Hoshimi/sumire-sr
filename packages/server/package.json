@@ -37,7 +37,7 @@
     "smoke:fresh-boot": "node scripts/smoke-fresh-boot.ts",
     "smoke:new-player": "node scripts/smoke-new-player.ts",
     "test:moshikoi": "node --test src/services/moshikoi/moshikoi.test.ts",
-    "test:marathon": "node --test src/services/marathon/catalog.test.ts src/services/marathon/state.test.ts src/services/marathon/box.test.ts src/services/marathon/liveBonus.test.ts src/services/marathon/liveBonusEffect.test.ts src/services/marathon/unlock.test.ts src/services/marathon/eventInfo.test.ts src/services/marathon/npcRoster.test.ts",
+    "test:marathon": "node --test src/services/marathon/catalog.test.ts src/services/marathon/state.test.ts src/services/marathon/box.test.ts src/services/marathon/liveBonus.test.ts src/services/marathon/liveBonusEffect.test.ts src/services/marathon/unlock.test.ts src/services/marathon/eventInfo.test.ts src/services/marathon/npcRoster.test.ts src/services/events/registry.test.ts",
     "test:deck": "node --test src/services/deck.test.ts",
     "test:birthday": "node --test src/services/birthday.test.ts",
     "test:birthday:db": "node src/birthdaydb.test.ts",

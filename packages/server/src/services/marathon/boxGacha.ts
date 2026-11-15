@@ -19,7 +19,7 @@ import {
 } from '../quest.ts';
 import { getItemAmount, spendItem } from '../inventory.ts';
 import { PCG, Rand } from '../../live/pcg.ts';
-import { activeMarathon, type MarathonConfig } from './catalog.ts';
+import { marathonConfig, marathonWindowFor, type MarathonConfig } from './catalog.ts';
 import { buildBoxGachaInfo, marathonPoints } from './boxInfo.ts';
 import { canResetBox, pickBoxDraws, remainingStock, resolveDrawCount } from './box.ts';
 import { addLiveBonus, pickLiveBonusId } from './liveBonus.ts';
@@ -50,7 +50,7 @@ function s(value: unknown): string {
 }
 
 /** Validate the request's marathon/box ids and load the master `BoxGacha` row. */
-async function resolveBox(rpc: string, req: Decoded): Promise<{
+async function resolveBox(rpc: string, req: Decoded, now: number): Promise<{
   config: MarathonConfig;
   boxGachaId: string;
   setting: Decoded;
@@ -58,9 +58,13 @@ async function resolveBox(rpc: string, req: Decoded): Promise<{
 }> {
   const marathonId = s(req.MarathonId);
   if (marathonId === '') throw new Error(`${rpc}: marathonId is required`);
-  const config = activeMarathon();
+  const config = marathonConfig(marathonId);
   if (!config) throw new Error(`${rpc}: no marathon is active`);
-  if (marathonId !== config.id) throw new Error(`${rpc}: marathon ${marathonId} is not active`);
+  // Draws stay available through the exchange period, not just the playable window.
+  const window = marathonWindowFor(marathonId, now);
+  if (!window || !(now < window.exchangeEndTime)) {
+    throw new Error(`${rpc}: marathon ${marathonId} is not active`);
+  }
 
   const boxGachaId = s(req.BoxGachaId);
   if (boxGachaId === '') throw new Error(`${rpc}: boxGachaId is required`);
@@ -82,7 +86,7 @@ register(
     let drawnForLog = 0;
     return withQuestPlayer(ctx, RPC_DRAW, async (playerId) => {
       const payload = await withPlayerTx(playerId, async (tx) => {
-        const { config, boxGachaId, setting, boxGacha } = await resolveBox(RPC_DRAW, req);
+        const { config, boxGachaId, setting, boxGacha } = await resolveBox(RPC_DRAW, req, now);
         const updated = { __msg: UPDATED_DATA_MSG } as Decoded;
         const evaluator = new ConditionEvaluator(playerId, now, tx);
         const state = await loadMarathonState(playerId, config, now, tx);
@@ -210,7 +214,7 @@ register(
     const now = Date.now();
     return withQuestPlayer(ctx, RPC_RESET, async (playerId) => {
       const payload = await withPlayerTx(playerId, async (tx) => {
-        const { config, boxGachaId, setting, boxGacha } = await resolveBox(RPC_RESET, req);
+        const { config, boxGachaId, setting, boxGacha } = await resolveBox(RPC_RESET, req, now);
         const evaluator = new ConditionEvaluator(playerId, now, tx);
         const state = await loadMarathonState(playerId, config, now, tx);
         const point = await marathonPoints(playerId, config.id, tx);

@@ -1,13 +1,13 @@
 /**
- * Mission:Event. Returns the EventMissionInfo of the active marathon's event
- * mission. Any other EventMissionId is rejected.
+ * Mission:Event. Returns the EventMissionInfo of the open marathon whose event
+ * mission matches `EventMissionId`. Any other id is rejected.
  */
 import { register, type RpcContext } from '../handlers.ts';
 import type { Decoded } from '@sumire-sr/protocol/runtime/proto.ts';
 import { commonResponse } from '../activity.ts';
 import { withQuestPlayer } from '../quest.ts';
 import { withPlayerTx } from '../../db/tx.ts';
-import { activeMarathon } from './catalog.ts';
+import { openMarathons } from './catalog.ts';
 import { marathonEventMissionInfo } from './eventInfo.ts';
 
 const RPC = 'Mission:Event';
@@ -18,10 +18,11 @@ register(RPC, async (ctx: RpcContext) => {
   const req = (ctx.request ?? {}) as Decoded;
   const eventMissionId = String(req.EventMissionId ?? '');
   return withQuestPlayer(ctx, RPC, async (playerId) => {
-    const config = activeMarathon();
-    if (!config || eventMissionId === '' || eventMissionId !== config.eventMissionId) {
-      throw new Error(`Mission:Event: unknown event mission ${eventMissionId}`);
-    }
+    const open = eventMissionId === ''
+      ? undefined
+      : openMarathons(Date.now()).find(({ config }) => config.eventMissionId === eventMissionId);
+    if (!open) throw new Error(`Mission:Event: unknown event mission ${eventMissionId}`);
+    const config = open.config;
     return {
       __msg: MISSION_EVENT_RESPONSE_MSG,
       Info: await withPlayerTx(playerId, (tx) => marathonEventMissionInfo(playerId, config, tx)),

@@ -51,7 +51,7 @@ import { PCG, Rand } from '../../live/pcg.ts';
 import { simulate } from '../../live/engine.ts';
 import type { Input } from '../../live/input.ts';
 import type { LiveResult } from '../../live/types.ts';
-import { activeMarathon } from './catalog.ts';
+import { marathonConfig, marathonWindowFor } from './catalog.ts';
 import { ensureMarathonMissionRows } from './eventInfo.ts';
 import { liveBonusInfos } from './liveBonus.ts';
 import { marathonBonusEffects, marathonLiveAbilityLevel, marathonPassiveEffects } from './liveBonusEffect.ts';
@@ -135,9 +135,6 @@ register(
       if (Array.isArray(req.UserBuddyDeckPositions) && req.UserBuddyDeckPositions.length > 0) {
         throw new Error(`${RPC}: friend rental is unavailable in this private server`);
       }
-      const config = activeMarathon();
-      if (!config) throw new Error(`${RPC}: no marathon is active`);
-
       const seed = randomBytes(8).readBigUInt64BE();
       const now = Date.now();
 
@@ -145,7 +142,11 @@ register(
         const updated = { __msg: UPDATED_DATA_MSG } as Decoded;
         const quest = (await getMarathonQuest(marathonQuestId)) as unknown as Decoded | null;
         if (!quest) throw new Error(`${RPC}: marathon quest not found: ${marathonQuestId}`);
-        if (s(quest.MarathonId) !== config.id) {
+        const marathonId = s(quest.MarathonId);
+        const config = marathonId === '' ? undefined : marathonConfig(marathonId);
+        if (!config) throw new Error(`${RPC}: no marathon is active`);
+        const window = marathonWindowFor(marathonId, now);
+        if (!window || !(now < window.endTime)) {
           throw new Error(`${RPC}: marathon quest ${marathonQuestId} is not in the active marathon`);
         }
         const diff = (await getMarathonQuestDifficulty(marathonQuestId, difficultyNumber)) as unknown as Decoded | null;

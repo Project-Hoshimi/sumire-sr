@@ -17,6 +17,8 @@ import { registerInviteRoutes } from './routes/invites.ts';
 import { registerAssetMirror } from './assetMirror.ts';
 import { registerOctoStore } from './octoStore.ts'; // experimental, opt-in (SUMIRE_OCTO_DATABASE)
 import { MASTER_BLOBS_DIR } from './services/master.ts';
+import { catalogDrafts } from './services/marathon/catalog.ts';
+import { initEventRegistry, openEvents } from './services/events/registry.ts';
 import { isSandbox } from './profile.ts';
 import { isMainModule } from './mainModule.ts';
 import { titleVariantBlobPath } from './profiles/sandbox/titleBackground.ts';
@@ -30,6 +32,9 @@ const HOP_BY_HOP = new Set([
   'te', 'trailer', 'transfer-encoding', 'upgrade', ':authority', ':method',
   ':path', ':scheme', ':status', 'content-length', 'accept-encoding',
 ]);
+
+/** Upper bound on the startup event-registry load before falling back to catalog files. */
+const EVENT_REGISTRY_TIMEOUT_MS = 10_000;
 
 async function proxyHandler(req: FastifyRequest, reply: FastifyReply) {
   req.log.info({ proxyUrl: req.url }, 'proxy handler entered');
@@ -397,11 +402,43 @@ export function buildServer(): FastifyInstance {
   return app;
 }
 
-export function start() {
+export async function start() {
   // Load the signing key at boot, not on the first request: the "[jwt] key
   // pair from …" line (or the loud WARNING when a new key is generated) must be
   // visible in the server log next to "Server listening".
   publicKeyFingerprint();
+  // Import catalog events with no definition yet, then compile the published
+  // ones. A database failure or a timeout must not stop the server: the marathon
+  // services then fall back to the checked-in catalog files, whose authored
+  // `schedule` blocks supply the event windows (open when
+  // startsAt <= now < exchangeEndsAt).
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let timedOut = false;
+  try {
+    const timeout = new Promise<never>((_resolve, reject) => {
+      timer = setTimeout(() => {
+        timedOut = true;
+        reject(new Error('registry load timed out'));
+      }, EVENT_REGISTRY_TIMEOUT_MS);
+      (timer as { unref?: () => void }).unref?.();
+    });
+    const { imported } = await Promise.race([
+      initEventRegistry({
+        drafts: catalogDrafts().map((draft) => ({ kind: 'marathon', draft })),
+      }),
+      timeout,
+    ]);
+    const open = openEvents('marathon', Date.now()).map((event) => event.id);
+    console.log('[events] registry loaded', { imported, open });
+  } catch (error) {
+    if (timedOut) {
+      console.error('[events] registry load timed out after 10s, falling back to catalog files');
+    } else {
+      console.error('[events] registry not loaded, falling back to catalog files:', error);
+    }
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
   const app = buildServer();
   logCaFingerprint(app.log);
   app
@@ -413,4 +450,9 @@ export function start() {
     });
 }
 
-if (isMainModule(import.meta.url, process.argv[1])) start();
+if (isMainModule(import.meta.url, process.argv[1])) {
+  start().catch((err) => {
+    console.error(err);
+    process.exit(1);
+  });
+}
