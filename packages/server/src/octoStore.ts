@@ -1,4 +1,4 @@
-import { createCipheriv, createHash, randomBytes } from 'node:crypto';
+import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { mkdir, open, rename, stat, writeFile, type FileHandle } from 'node:fs/promises';
 import { delimiter, dirname, join, resolve } from 'node:path';
@@ -110,26 +110,30 @@ function varintBytes(value: number): Buffer {
   return Buffer.from(out);
 }
 
+/** `Data.state` values (`octodb.proto`). An absent field is 0 (ADD). */
+export const OCTO_STATE_LATEST = 2;
+
+/** One database entry with the fields the store and the operator tools need. */
+export type OctoEntry = OctoAsset & { objectName: string; state: number };
+
 /**
  * Index the database (`Database`: 1 revision, 2 assetBundleList, 4 resourceList, 5 urlFormat;
- * `Data`: 3 name, 4 size, 10 md5, 11 objectName, 12 generation, 13 uploadVersion) and return
- * it with field 5 replaced. `upstreamUrlFormat` is the original field 5 value, before the
- * rewrite, used as the template for opt-in upstream fill.
+ * `Data`: 3 name, 4 size, 9 state, 10 md5, 11 objectName, 12 generation, 13 uploadVersion).
+ * Entries without an objectName or a valid MD5 are skipped. A later entry with the same
+ * objectName replaces an earlier one.
  */
-export function rewriteOctoDatabase(database: Uint8Array, urlFormat: string): {
-  bytes: Buffer;
+export function indexOctoDatabase(database: Uint8Array): {
   revision: number;
-  assets: Map<string, OctoAsset>;
-  upstreamUrlFormat: string;
+  entries: Map<string, OctoEntry>;
+  urlFormat: string;
 } {
-  const assets = new Map<string, OctoAsset>();
-  const parts: Buffer[] = [];
+  const entries = new Map<string, OctoEntry>();
   let revision = 0;
-  let upstreamUrlFormat = '';
+  let urlFormat = '';
   const str = (b: Uint8Array, f: Field) => Buffer.from(b.subarray(f.valueStart, f.end)).toString('utf8');
   for (const f of fields(database)) {
     if (f.number === 1 && f.wire === 0) revision = Number(f.varint);
-    if (f.number === 5 && f.wire === 2) upstreamUrlFormat = str(database, f);
+    if (f.number === 5 && f.wire === 2) urlFormat = str(database, f);
     if ((f.number === 2 || f.number === 4) && f.wire === 2) {
       const data = database.subarray(f.valueStart, f.end);
       const kind = f.number === 2 ? 'assetbundle' : 'resources';
@@ -137,31 +141,78 @@ export function rewriteOctoDatabase(database: Uint8Array, urlFormat: string): {
       let md5 = '';
       let objectName = '';
       let size = 0;
+      let state = 0;
       let generation = '';
       let uploadVersion = '';
       for (const g of fields(data)) {
         if (g.number === 3 && g.wire === 2) name = str(data, g);
         else if (g.number === 4 && g.wire === 0) size = Number(g.varint);
+        else if (g.number === 9 && g.wire === 0) state = Number(g.varint);
         else if (g.number === 10 && g.wire === 2) md5 = str(data, g).toLowerCase();
         else if (g.number === 11 && g.wire === 2) objectName = str(data, g);
         else if (g.number === 12 && g.wire === 0) generation = g.varint.toString();
         else if (g.number === 13 && g.wire === 0) uploadVersion = g.varint.toString();
       }
       if (objectName && MD5_RE.test(md5)) {
-        assets.set(objectName, { name, md5, size, kind, generation, uploadVersion });
+        entries.set(objectName, { name, md5, size, kind, generation, uploadVersion, objectName, state });
       }
     }
+  }
+  return { revision, entries, urlFormat };
+}
+
+/**
+ * Index the database (see `indexOctoDatabase`) and return it with field 5 replaced.
+ * `upstreamUrlFormat` is the original field 5 value, before the rewrite, used as the
+ * template for opt-in upstream fill.
+ */
+export function rewriteOctoDatabase(database: Uint8Array, urlFormat: string): {
+  bytes: Buffer;
+  revision: number;
+  assets: Map<string, OctoAsset>;
+  upstreamUrlFormat: string;
+} {
+  const index = indexOctoDatabase(database);
+  const assets = new Map<string, OctoAsset>();
+  for (const [objectName, e] of index.entries) {
+    assets.set(objectName, {
+      name: e.name,
+      md5: e.md5,
+      size: e.size,
+      kind: e.kind,
+      generation: e.generation,
+      uploadVersion: e.uploadVersion,
+    });
+  }
+  const parts: Buffer[] = [];
+  for (const f of fields(database)) {
     if (f.number !== 5) parts.push(Buffer.from(database.subarray(f.start, f.end)));
   }
   const url = Buffer.from(urlFormat, 'utf8');
   parts.push(Buffer.from([(5 << 3) | 2]), varintBytes(url.length), url);
-  return { bytes: Buffer.concat(parts), revision, assets, upstreamUrlFormat };
+  return { bytes: Buffer.concat(parts), revision: index.revision, assets, upstreamUrlFormat: index.urlFormat };
 }
 
 /** AES-256-CBC/PKCS7 over (16 random bytes || database), the shape the client skips and parses. */
 export function encryptOctoList(plain: Uint8Array, key: Buffer, iv: Buffer): Buffer {
   const cipher = createCipheriv('aes-256-cbc', key, iv);
   return Buffer.concat([cipher.update(randomBytes(16)), cipher.update(plain), cipher.final()]);
+}
+
+/** Reverse of `encryptOctoList`: decrypt a list body and drop the 16-byte prefix. */
+export function decryptOctoList(body: Uint8Array, key: Buffer, iv: Buffer): Buffer {
+  const decipher = createDecipheriv('aes-256-cbc', key, iv);
+  const plain = Buffer.concat([decipher.update(body), decipher.final()]);
+  if (plain.length < 16) throw new Error('octo list: decrypted body is shorter than its 16-byte prefix');
+  return plain.subarray(16);
+}
+
+/**
+ * Where a store directory may hold the file for `md5`, in lookup order: nested
+ * `<dir>/<md5[0:2]>/<md5>` (the layout upstream fill and import write), then flat `<dir>/<md5>`.
+ */
+export function octoFileCandidates(dir: string, md5: string): string[] {
+  return [join(dir, md5.slice(0, 2), md5), join(dir, md5)];
 }
 
 export class OctoStore {
@@ -198,7 +249,7 @@ export class OctoStore {
   /** Open the MD5-named file of an asset; only a regular file of the manifest size counts. */
   async open(asset: OctoAsset): Promise<{ handle: FileHandle; size: number; mtime: Date } | null> {
     for (const dir of this.assetDirs) {
-      for (const path of [join(dir, asset.md5.slice(0, 2), asset.md5), join(dir, asset.md5)]) {
+      for (const path of octoFileCandidates(dir, asset.md5)) {
         let st;
         try {
           st = await stat(path);
@@ -245,7 +296,7 @@ export class OctoStore {
     if (body.length !== asset.size) throw new Error(`size mismatch: got ${body.length}, want ${asset.size}`);
     const digest = createHash('md5').update(body).digest('hex');
     if (digest !== asset.md5) throw new Error('md5 mismatch');
-    const dest = join(this.assetDirs[0], asset.md5.slice(0, 2), asset.md5);
+    const dest = octoFileCandidates(this.assetDirs[0], asset.md5)[0];
     await mkdir(dirname(dest), { recursive: true });
     const tmp = `${dest}.tmp-${randomBytes(6).toString('hex')}`;
     await writeFile(tmp, body);
