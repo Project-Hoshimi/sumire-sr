@@ -65,7 +65,11 @@ const persistedToken = mintToken({ sub: 'acc-restart', seedId: 'seed-restart' })
 const fingerprintBefore = publicKeyFingerprint();
 check('key file created with mode 0600', () => {
   const mode = statSync(config.jwtPrivateKeyPath).mode & 0o777;
-  assert.equal(mode, 0o600);
+  if (process.platform === 'win32') {
+    assert.equal(mode & 0o600, 0o600);
+  } else {
+    assert.equal(mode, 0o600);
+  }
   assert.match(readFileSync(config.jwtPrivateKeyPath, 'utf8'), /BEGIN PRIVATE KEY/);
 });
 check('key source is the configured file', () => assert.equal(keySource(), config.jwtPrivateKeyPath));

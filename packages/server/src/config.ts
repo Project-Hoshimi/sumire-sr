@@ -55,7 +55,7 @@ export function hasJwtKeys(): boolean {
 export function tlsCaCertPath(): string {
   return process.env.TLS_CA_CERT
     ? resolve(process.env.TLS_CA_CERT)
-    : join(import.meta.dirname, '..', '..', 'tls', 'ca.crt');
+    : join(import.meta.dirname, '..', '..', '..', 'tls', 'ca.crt');
 }
 
 /**

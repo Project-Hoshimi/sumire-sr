@@ -3,6 +3,7 @@ node_modules
 !.env.example
 
 keys/
+tls/
 *.pem
 *.key
 
