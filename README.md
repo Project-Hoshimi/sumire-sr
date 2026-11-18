@@ -82,6 +82,10 @@ On an empty database with no game data the server boots and sandbox `Auth:Create
 
 Never commit real account tokens, captures, or personal data into this repository.
 
+### Marathon event (experimental)
+
+`SUMIRE_MARATHON_ID` turns on one authored Marathon event by naming a catalog at `packages/server/src/services/marathon/catalog/<id>.json`; `marathon-placeholder` is the checked-in fake. When set, `Home:Enter` advertises the event and `Marathon:Top` serves its config plus the seeded marathon master rows. It is experimental and was built without recorded traffic, so it is recorded as `stub`; leave the variable unset to keep the previous behaviour.
+
 ### Invite links
 
 `SUMIRE_REGISTRATION` sets who may get an account: `open` (default) lets new players sign in without a link, `invite` requires an invite link, and `closed` refuses invite pages with 403.

@@ -30,6 +30,8 @@ export const ERROR_CODE = {
   MIGRATION_TARGET_NOT_FOUND: 3009,
   /** `s_ErrorCode_FunctionLocked`: the RPC has no server-side handler yet. */
   FUNCTION_LOCKED: 3022,
+  /** `ErrorCode_AlreadyMaximumStamina`: a stamina item was used at full stamina. */
+  ALREADY_MAXIMUM_STAMINA: 3028,
 } as const;
 
 /**

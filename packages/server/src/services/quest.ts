@@ -30,7 +30,7 @@ import { applyCardRelease, cardReleaseForCard } from './cardRelease.ts';
 import { unlockCardStories } from './cardStories.ts';
 import { ConditionEvaluator } from './conditions.ts';
 import { HIERARCHY_PRIVATE_SERVER_RANK, reconcileHierarchyNotification } from './hierarchy.ts';
-import { NPCRoster } from '../live/preparation.ts';
+import { opponentInfoForRoster } from './opponent.ts';
 import { advanceUserMissions, MissionType, reachUserMissions } from './missionProgress.ts';
 import { getItemAmount, spendItem } from './inventory.ts';
 import {
@@ -261,11 +261,8 @@ export async function loadQuestCatalog(
       const row: Decoded = { __msg: QUEST_INFO_MSG, QuestId: id, Cleared: cleared(id), IsPlayable: info.Unlocked && canPlay } as Decoded;
       if (n(q.ClearScore) === 0 && (type === AREA_MAIN || type === AREA_TOWER)) {
         // Known boss rosters are safe to preview; a missing roster must not hide the catalog.
-        try {
-          row.OpponentInfo = NPCRoster(id) as unknown as Decoded;
-        } catch {
-          // Start performs its own unsupported-opponent preflight.
-        }
+        const opponent = opponentInfoForRoster(id);
+        if (opponent !== undefined) row.OpponentInfo = opponent;
       }
       switch (type) {
         case AREA_MAIN:
@@ -386,7 +383,7 @@ async function loadSetting(_exec: Executor): Promise<Decoded | null> {
   return (row as unknown as Decoded | null) ?? null;
 }
 
-function pushUpdated(updated: Decoded, key: string, row: Decoded): void {
+export function pushUpdated(updated: Decoded, key: string, row: Decoded): void {
   const rows = Array.isArray(updated[key]) ? (updated[key] as Decoded[]) : [];
   updated[key] = [...rows, row] as Decoded;
 }
@@ -494,7 +491,7 @@ export function questStartScoreRank(patterns: Decoded[], score: number): { rankT
 }
 
 /** Solis `questStartRankReward`. */
-function questStartRankReward(quest: Decoded, rank: number): string {
+export function questStartRankReward(quest: Decoded, rank: number): string {
   switch (rank) {
     case RANK_S:
     case RANK_S_PLUS:
@@ -512,7 +509,7 @@ function questStartRankReward(quest: Decoded, rank: number): string {
 }
 
 /** Solis `questBoostedAmount`. */
-function questBoostedAmount(amount: number, bonusPermil: number): number {
+export function questBoostedAmount(amount: number, bonusPermil: number): number {
   if (bonusPermil < 0 || amount < 0) throw new Error('live reward bonus overflows');
   const boosted = Math.floor((amount * (1000 + bonusPermil)) / 1000);
   if (!Number.isSafeInteger(boosted)) throw new Error('live reward bonus overflows');
@@ -520,7 +517,7 @@ function questBoostedAmount(amount: number, bonusPermil: number): number {
 }
 
 /** Solis `questRepeatedAmount`. */
-function questRepeatedAmount(amount: number, count: number): number {
+export function questRepeatedAmount(amount: number, count: number): number {
   if (amount < 0 || count <= 0 || !Number.isSafeInteger(amount * count)) {
     throw new Error('repeated live reward overflows');
   }
@@ -528,7 +525,7 @@ function questRepeatedAmount(amount: number, count: number): number {
 }
 
 /** Solis `grantQuestReward`: fixed resources, then rolled films and optional items. */
-async function grantQuestReward(
+export async function grantQuestReward(
   playerId: string,
   rewardId: string,
   count: number,
@@ -594,7 +591,7 @@ function aggregateRewardResults(results: Decoded[]): Decoded[] {
 }
 
 /** Solis `settleQuestCharacters`: fan catch-up, card exp, music mastery. */
-async function settleQuestCharacters(
+export async function settleQuestCharacters(
   playerId: string,
   req: Decoded,
   quest: Decoded,
@@ -784,7 +781,7 @@ function findAreaInfo(catalog: Catalog, questId: string): Decoded | null {
 }
 
 
-async function withQuestPlayer<T>(ctx: RpcContext, rpc: string, fn: (playerId: string) => Promise<T>): Promise<T> {
+export async function withQuestPlayer<T>(ctx: RpcContext, rpc: string, fn: (playerId: string) => Promise<T>): Promise<T> {
   const accountId = ctx.auth.ok ? ctx.auth.claims?.sub : undefined;
   if (!accountId) throw new Error(`${rpc}: unauthenticated`);
   const [pl] = await db.select().from(players).where(eq(players.accountId, accountId)).limit(1);
@@ -990,7 +987,7 @@ register(
   { ownsState: true },
 );
 
-function compactUpdated(updated: Decoded): Decoded {
+export function compactUpdated(updated: Decoded): Decoded {
   const result = { __msg: UPDATED_DATA_MSG } as Decoded;
   for (const [key, value] of Object.entries(updated)) {
     if (key === '__msg' || key === '__unknown') continue;

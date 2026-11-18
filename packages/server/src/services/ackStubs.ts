@@ -44,6 +44,12 @@ export const ACK_STUBS: ReadonlyArray<{ name: string; responseMsg: string; hasCo
     todo: 'Should advance the post-profile mission (solis-server profile/clear_twitter_mission.go).',
   },
   {
+    name: 'Quest:OutputLiveResultDetailLog',
+    responseMsg: 'Solis.Common.Proto.Api.OutputLiveResultDetailLogResponse',
+    hasCommon: true,
+    todo: 'Fire-and-forget telemetry log (liveResultDetailLogId, cleared, score); nothing to store.',
+  },
+  {
     name: 'Salary:GetPayslip',
     responseMsg: 'Solis.Common.Proto.Api.SalaryGetPayslipResponse',
     hasCommon: true,

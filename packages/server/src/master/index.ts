@@ -881,7 +881,70 @@ export async function listMarathonBoxGachaSettings(marathonId: string) {
   return db
     .select()
     .from(master.masterMarathonBoxGachaSetting)
-    .where(eq(master.masterMarathonBoxGachaSetting.MarathonId, marathonId));
+    .where(eq(master.masterMarathonBoxGachaSetting.MarathonId, marathonId))
+    .orderBy(asc(master.masterMarathonBoxGachaSetting.Order));
+}
+
+/**
+ * Live-bonus ids of every `MarathonLiveBonusGroup` row for `groupId`, sorted
+ * ascending. Several rows can share one group, so the result can have many ids.
+ */
+export async function listMarathonLiveBonusIds(groupId: string): Promise<string[]> {
+  const rows = await db
+    .select({ LiveBonusId: master.masterMarathonLiveBonusGroup.LiveBonusId })
+    .from(master.masterMarathonLiveBonusGroup)
+    .where(eq(master.masterMarathonLiveBonusGroup.GroupId, groupId))
+    .orderBy(asc(master.masterMarathonLiveBonusGroup.LiveBonusId));
+  return rows.map((row) => String(row.LiveBonusId ?? '')).filter((id) => id !== '');
+}
+
+/** One `MarathonLiveBonus` row by id, or null. */
+export async function getMarathonLiveBonus(id: string) {
+  const [row] = await db
+    .select()
+    .from(master.masterMarathonLiveBonus)
+    .where(eq(master.masterMarathonLiveBonus.Id, id))
+    .limit(1);
+  return row ?? null;
+}
+
+export async function listMarathonQuests(marathonId: string) {
+  return db
+    .select()
+    .from(master.masterMarathonQuest)
+    .where(eq(master.masterMarathonQuest.MarathonId, marathonId))
+    .orderBy(asc(master.masterMarathonQuest.Order));
+}
+
+export async function listMarathonQuestDifficulties(marathonQuestId: string) {
+  return db
+    .select()
+    .from(master.masterMarathonQuestDifficulty)
+    .where(eq(master.masterMarathonQuestDifficulty.MarathonQuestId, marathonQuestId))
+    .orderBy(asc(master.masterMarathonQuestDifficulty.DifficultyNumber));
+}
+
+export async function getMarathonQuest(id: string) {
+  const [row] = await db
+    .select()
+    .from(master.masterMarathonQuest)
+    .where(eq(master.masterMarathonQuest.Id, id))
+    .limit(1);
+  return row ?? null;
+}
+
+export async function getMarathonQuestDifficulty(marathonQuestId: string, difficultyNumber: number) {
+  const [row] = await db
+    .select()
+    .from(master.masterMarathonQuestDifficulty)
+    .where(
+      and(
+        eq(master.masterMarathonQuestDifficulty.MarathonQuestId, marathonQuestId),
+        eq(master.masterMarathonQuestDifficulty.DifficultyNumber, difficultyNumber),
+      ),
+    )
+    .limit(1);
+  return row ?? null;
 }
 
 export async function getShowcaseFrame(id: string) {

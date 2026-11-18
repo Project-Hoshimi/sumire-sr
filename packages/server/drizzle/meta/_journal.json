@@ -253,6 +253,13 @@
       "when": 1794380519509,
       "tag": "0037_player_friend_links",
       "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1794467000000,
+      "tag": "0038_marathon_master",
+      "breakpoints": true
     }
   ]
 }

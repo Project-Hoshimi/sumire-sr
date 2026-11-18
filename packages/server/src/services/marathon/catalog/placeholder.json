@@ -1,0 +1,46 @@
+{
+  "id": "marathon-placeholder",
+  "name": "Placeholder Marathon",
+  "type": 1,
+  "assetId": "placeholder-marathon-asset",
+  "bannerAssetId": "placeholder-marathon-banner",
+  "boxGachaGroupId": "placeholder-box-gacha-group",
+  "initialStamina": 10,
+  "staminaRecoveryMinutes": 5,
+  "staminaRecoveryItemId": "placeholder-stamina-recovery-item",
+  "questUnlockItemId": "placeholder-quest-unlock-item",
+  "eventMissionId": "placeholder-event-mission",
+  "order": 1,
+  "boxDrawMax": 100,
+  "boxInfiniteRate": 0.7,
+  "boxGachas": {
+    "placeholder-box-gacha": {
+      "items": [
+        {
+          "order": 1,
+          "itemType": 1,
+          "rewardId": "placeholder-box-reward",
+          "initialStock": 100,
+          "isLimited": false
+        },
+        {
+          "order": 2,
+          "itemType": 1,
+          "rewardId": "placeholder-box-limited-reward",
+          "initialStock": 1,
+          "isLimited": true,
+          "isPickup": true,
+          "assetId": "placeholder-box-limited-asset",
+          "description": "One-off placeholder prize"
+        },
+        {
+          "order": 3,
+          "itemType": 2,
+          "liveBonusGroupId": "example-live-bonus-group-1",
+          "initialStock": 50,
+          "isLimited": false
+        }
+      ]
+    }
+  }
+}

@@ -1352,6 +1352,99 @@ export const masterMarathonBoxGachaSetting = pgTable(
   ],
 );
 
+// Marathon event master data. `MarathonQuest` is the quest list (ordered by
+// `Order`); `MarathonQuestDifficulty` is one row per difficulty number of a
+// quest. `MarathonLiveBonus`/`MarathonLiveBonusGroup` mirror the live-bonus
+// tables but are event-scoped and keyed by live-bonus id.
+export const masterMarathonQuest = pgTable(
+  'master_MarathonQuest',
+  {
+    Id: text('Id').notNull(),
+    MarathonId: text('MarathonId').notNull(),
+    Name: text('Name'),
+    Description: text('Description'),
+    Order: bigint('Order', { mode: 'number' }),
+    UnlockConditionId: text('UnlockConditionId'),
+    MarathonPointBonusCharacterIds: jsonb('MarathonPointBonusCharacterIds'),
+    BoxGachaId: text('BoxGachaId'),
+    StageId: text('StageId'),
+    MusicId: text('MusicId'),
+    MusicChartPatternId: text('MusicChartPatternId'),
+    RequiredUnlockItemAmount: bigint('RequiredUnlockItemAmount', { mode: 'number' }),
+    RequiredStamina: bigint('RequiredStamina', { mode: 'number' }),
+    Position1AttributeType: bigint('Position1AttributeType', { mode: 'number' }),
+    Position2AttributeType: bigint('Position2AttributeType', { mode: 'number' }),
+    Position3AttributeType: bigint('Position3AttributeType', { mode: 'number' }),
+    Position4AttributeType: bigint('Position4AttributeType', { mode: 'number' }),
+    Position5AttributeType: bigint('Position5AttributeType', { mode: 'number' }),
+    ActiveSkillWeightPermil: bigint('ActiveSkillWeightPermil', { mode: 'number' }),
+    SpecialSkillWeightPermil: bigint('SpecialSkillWeightPermil', { mode: 'number' }),
+    SkillStaminaWeightPermil: bigint('SkillStaminaWeightPermil', { mode: 'number' }),
+    StaminaRecoveryWeightPermil: bigint('StaminaRecoveryWeightPermil', { mode: 'number' }),
+    BeatDanceWeightPermil: bigint('BeatDanceWeightPermil', { mode: 'number' }),
+    BeatVocalWeightPermil: bigint('BeatVocalWeightPermil', { mode: 'number' }),
+    BeatVisualWeightPermil: bigint('BeatVisualWeightPermil', { mode: 'number' }),
+    QuestPressureId: text('QuestPressureId'),
+    QuestCharacterAdvantageId: text('QuestCharacterAdvantageId'),
+    QuestAudienceAdvantageId: text('QuestAudienceAdvantageId'),
+    MoodType: bigint('MoodType', { mode: 'number' }),
+    MaxCapacity: bigint('MaxCapacity', { mode: 'number' }),
+    DailyLimitCount: bigint('DailyLimitCount', { mode: 'number' }),
+    AssetId: text('AssetId'),
+    UnlockDescription: text('UnlockDescription'),
+  },
+  (t) => [uniqueIndex('master_marathon_quest_id_idx').on(t.Id)],
+);
+
+export const masterMarathonQuestDifficulty = pgTable(
+  'master_MarathonQuestDifficulty',
+  {
+    MarathonQuestId: text('MarathonQuestId').notNull(),
+    DifficultyNumber: bigint('DifficultyNumber', { mode: 'number' }).notNull(),
+    DifficultyLevel: bigint('DifficultyLevel', { mode: 'number' }),
+    MarathonId: text('MarathonId'),
+    MentalThreshold: bigint('MentalThreshold', { mode: 'number' }),
+    ClearScore: bigint('ClearScore', { mode: 'number' }),
+    RewardManagerExp: bigint('RewardManagerExp', { mode: 'number' }),
+    RewardCardExp: bigint('RewardCardExp', { mode: 'number' }),
+    RewardMarathonPoint: bigint('RewardMarathonPoint', { mode: 'number' }),
+    ClearRewardId: text('ClearRewardId'),
+    RankAdditionalRewardId: text('RankAdditionalRewardId'),
+    RankSRewardId: text('RankSRewardId'),
+    RankARewardId: text('RankARewardId'),
+    RankBRewardId: text('RankBRewardId'),
+    RankCRewardId: text('RankCRewardId'),
+    UnlockConditionId: text('UnlockConditionId'),
+    LiveBonusGroupId: text('LiveBonusGroupId'),
+  },
+  (t) => [
+    uniqueIndex('master_marathon_quest_difficulty_key_idx').on(t.MarathonQuestId, t.DifficultyNumber),
+  ],
+);
+
+export const masterMarathonLiveBonus = pgTable(
+  'master_MarathonLiveBonus',
+  {
+    Id: text('Id').notNull(),
+    Name: text('Name'),
+    LiveAbilityId: text('LiveAbilityId'),
+    LiveAbilityLevel: bigint('LiveAbilityLevel', { mode: 'number' }),
+    PowerPermil: bigint('PowerPermil', { mode: 'number' }),
+  },
+  (t) => [uniqueIndex('master_marathon_live_bonus_id_idx').on(t.Id)],
+);
+
+export const masterMarathonLiveBonusGroup = pgTable(
+  'master_MarathonLiveBonusGroup',
+  {
+    GroupId: text('GroupId').notNull(),
+    LiveBonusId: text('LiveBonusId'),
+  },
+  (t) => [
+    uniqueIndex('master_marathon_live_bonus_group_key_idx').on(t.GroupId, t.LiveBonusId),
+  ],
+);
+
 // Home-screen talks. `ConditionId` points at `master_Condition`; the sandbox
 // seed reads the fan thresholds from there when it raises `UserCharacter`.
 export const masterHomeTalk = pgTable(
