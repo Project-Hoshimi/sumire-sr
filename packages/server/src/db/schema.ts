@@ -10,6 +10,7 @@ import {
   uniqueIndex,
   index,
 } from 'drizzle-orm/pg-core';
+import type { NpcRosterCard } from '../live/data/npcRosters.ts';
 
 export const accounts = pgTable(
   'accounts',
@@ -557,6 +558,59 @@ export const eventDefinitionHistory = pgTable(
     publishedAt: timestamp('published_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (t) => [uniqueIndex('event_definition_history_event_version_idx').on(t.eventId, t.version)],
+);
+
+/**
+ * DB-backed versus-stage NPC rosters, keyed by the roster id (for main-story
+ * quests this is the quest id). The checked-in `live/data/npcRosters.ts`
+ * constant seeds this table on startup; runtime lookups go through the
+ * in-process roster cache.
+ */
+export const npcRostersTable = pgTable('npc_rosters', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  managerLevel: integer('manager_level').notNull(),
+  cards: jsonb('cards').$type<NpcRosterCard[]>().notNull(),
+  updatedBy: text('updated_by'),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
+/**
+ * Admin console accounts. Usernames are stored lowercased; only the scrypt
+ * password hash is kept. `role` is one of viewer|editor|publisher|owner.
+ */
+export const adminUsers = pgTable(
+  'admin_users',
+  {
+    id: text('id').primaryKey(),
+    username: text('username').notNull(),
+    passwordHash: text('password_hash').notNull(),
+    role: text('role').notNull(),
+    disabled: boolean('disabled').default(false).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    lastLoginAt: timestamp('last_login_at', { withTimezone: true }),
+  },
+  (t) => [uniqueIndex('admin_users_username_idx').on(t.username)],
+);
+
+/**
+ * Admin console sessions. The cookie token never reaches the database; only
+ * its SHA-256 hex digest is stored as the primary key. `expiresAt` is the
+ * absolute expiry (created + 12h); `lastSeenAt` drives the 2h idle timeout.
+ */
+export const adminSessions = pgTable(
+  'admin_sessions',
+  {
+    tokenHash: text('token_hash').primaryKey(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => adminUsers.id, { onDelete: 'cascade' }),
+    csrfToken: text('csrf_token').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    lastSeenAt: timestamp('last_seen_at', { withTimezone: true }).notNull(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  },
+  (t) => [index('admin_sessions_user_id_idx').on(t.userId)],
 );
 
 export * from './masterSchema.ts';

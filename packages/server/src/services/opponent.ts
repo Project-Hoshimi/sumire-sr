@@ -55,17 +55,19 @@ export function scaleOpponentToLevel(opponent: Decoded, level: unknown): Decoded
 /**
  * Opponent preview for one marathon difficulty. Only versus stages (`ClearScore`
  * 0) whose quest maps to a configured roster carry one. The roster's authored
- * levels are scaled to the difficulty's `DifficultyLevel`.
+ * levels are scaled to `npcLevel`, or the difficulty's `DifficultyLevel` when
+ * no level rule applies.
  */
 export function marathonOpponentInfo(
   questId: string,
   difficulty: Decoded,
   npcRosters: Record<string, string> | undefined,
+  npcLevel?: number,
 ): Decoded {
   if (n(difficulty.ClearScore) !== 0) return emptyOpponentInfo();
   const rosterId = npcRosters?.[questId];
   if (rosterId === undefined) return emptyOpponentInfo();
   const roster = opponentInfoForRoster(rosterId);
   if (roster === undefined) return emptyOpponentInfo();
-  return scaleOpponentToLevel(roster, n(difficulty.DifficultyLevel));
+  return scaleOpponentToLevel(roster, npcLevel ?? n(difficulty.DifficultyLevel));
 }

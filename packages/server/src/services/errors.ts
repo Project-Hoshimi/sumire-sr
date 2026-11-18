@@ -22,6 +22,11 @@ export const ERROR_CODE = {
   INVALID_ARGUMENT: 2001,
   /** `s_ErrorCode_Unauthenticated`: the session/token is no longer valid. */
   UNAUTHENTICATED: 2004,
+  /**
+   * `s_ErrorCode_DateChanged`: client returns to title; used for forced relog
+   * after event changes (mirrors Solis' daily-relogin title action).
+   */
+  DATE_CHANGED: 1003,
   /** `s_ErrorCode_PasswordMigrationFailed`: the given id/password did not match. */
   PASSWORD_MIGRATION_FAILED: 3003,
   /** `s_ErrorCode_PasswordInvalid`: the link password format was rejected. */
@@ -56,6 +61,12 @@ export const ERROR_ACTION = {
  * and then returns to the home screen.
  */
 export const NOT_IMPLEMENTED_MESSAGE = message('notImplemented');
+
+/**
+ * Dialog body shown before the title screen when published event state changed
+ * since the session started (forced relog).
+ */
+export const EVENT_RELOG_MESSAGE = message('eventRelogRequired');
 
 /**
  * Error sent when Auth:Login meets an unbound UID on an invite/closed server.

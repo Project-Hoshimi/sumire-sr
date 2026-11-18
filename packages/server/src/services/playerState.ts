@@ -670,6 +670,13 @@ export function collectionElementMsg(field: string): string | null {
  */
 const JSON_SINGLETON_PREFIX = 'json:';
 
+/** Decode a JSON-singleton blob (`json:` + base64 JSON), or null for another encoding. */
+export function decodeJsonSingletonBlob(blob: string): Decoded | null {
+  if (!blob.startsWith(JSON_SINGLETON_PREFIX)) return null;
+  const raw = Buffer.from(blob.slice(JSON_SINGLETON_PREFIX.length), 'base64').toString('utf8');
+  return JSON.parse(raw) as Decoded;
+}
+
 async function readJsonSingleton(
   playerId: string,
   field: string,
@@ -681,10 +688,7 @@ async function readJsonSingleton(
     .where(and(eq(playerEntities.playerId, playerId), eq(playerEntities.kind, field)))
     .limit(1);
   if (!rows.length) return null;
-  const blob = rows[0].blob;
-  if (!blob.startsWith(JSON_SINGLETON_PREFIX)) return null;
-  const raw = Buffer.from(blob.slice(JSON_SINGLETON_PREFIX.length), 'base64').toString('utf8');
-  return JSON.parse(raw) as Decoded;
+  return decodeJsonSingletonBlob(rows[0].blob);
 }
 
 async function writeJsonSingleton(

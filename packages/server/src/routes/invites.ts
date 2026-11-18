@@ -5,8 +5,10 @@
  * resources); the page POSTs `{password}` back to the same URL and the server
  * creates the account + player in one transaction, then shows the title ID.
  *
- * `/sumire/admin/*` is guarded by `Authorization: Bearer <SUMIRE_ADMIN_TOKEN>`;
- * with no token configured the routes answer 404 like they do not exist.
+ * `/sumire/admin/*` accepts either `Authorization: Bearer <SUMIRE_ADMIN_TOKEN>`
+ * or an owner session cookie (then writes also need the CSRF header). Without a
+ * configured token and without an owner session the routes answer 404, like the
+ * bearer-only routes always did.
  */
 import { createHash, timingSafeEqual } from 'node:crypto';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
@@ -23,8 +25,16 @@ import {
 } from '../db/invites.ts';
 import { upsertPassword } from '../db/credentials.ts';
 import { generateLinkPassword, hashPassword, isValidLinkPassword } from '../auth/passwords.ts';
-import { ADMIN_TOKEN, PUBLIC_URL, registrationMode } from '../config.ts';
+import { PUBLIC_URL, registrationMode } from '../config.ts';
 import { createAccountWithPlayer, seedSandboxIfNeeded } from '../services/auth.ts';
+import {
+  ADMIN_COOKIE_NAME,
+  ADMIN_CSRF_HEADER,
+  csrfMatches,
+  lookupSession,
+} from '../services/admin/auth.ts';
+import { drizzleAdminStore } from '../services/admin/store.drizzle.ts';
+import type { AdminStore } from '../services/admin/store.ts';
 import { message } from '../messages.ts';
 
 const HTML_TYPE = 'text/html; charset=utf-8';
@@ -155,12 +165,17 @@ function constantTimeEqual(a: string, b: string): boolean {
   return timingSafeEqual(left, right);
 }
 
-/** No admin token configured → the routes behave as if they did not exist. */
-function adminDenied(req: FastifyRequest): boolean {
-  if (!ADMIN_TOKEN) return true;
-  const token = bearerToken(req);
-  return !token || !constantTimeEqual(token, ADMIN_TOKEN);
+/** No admin token configured → the bearer path behaves as if it did not exist. */
+function configuredAdminToken(): string {
+  return process.env.SUMIRE_ADMIN_TOKEN ?? '';
 }
+
+export interface InviteAdminDeps {
+  store?: AdminStore;
+  now?: () => Date;
+}
+
+type AuthResult = { ok: true } | { ok: false; status: 403 | 404 };
 
 function inviteBaseUrl(req: FastifyRequest): string {
   const base = PUBLIC_URL || `https://${req.headers.host ?? 'localhost'}`;
@@ -216,12 +231,52 @@ async function postInvite(req: FastifyRequest, reply: FastifyReply) {
   return { publicUserId: identity.publicUserId };
 }
 
-export function registerInviteRoutes(app: FastifyInstance): void {
+export function registerInviteRoutes(app: FastifyInstance, deps: InviteAdminDeps = {}): void {
+  const store = deps.store ?? drizzleAdminStore();
+  const now = deps.now ?? (() => new Date());
+
+  /**
+   * The legacy bearer token still works exactly as before. Owners may also use
+   * a session cookie; their non-GET requests must carry the session CSRF token.
+   * Everything unauthenticated answers 404 (routes do not reveal themselves).
+   */
+  async function authorize(req: FastifyRequest): Promise<AuthResult> {
+    const expected = configuredAdminToken();
+    if (expected) {
+      const token = bearerToken(req);
+      if (token && constantTimeEqual(token, expected)) return { ok: true };
+    }
+
+    const cookie = req.cookies?.[ADMIN_COOKIE_NAME];
+    if (cookie) {
+      const auth = await lookupSession(store, cookie, now());
+      if (auth && auth.user.role === 'owner') {
+        if (
+          req.method !== 'GET' &&
+          !csrfMatches(req.headers[ADMIN_CSRF_HEADER], auth.session.csrfToken)
+        ) {
+          return { ok: false, status: 403 };
+        }
+        return { ok: true };
+      }
+    }
+    return { ok: false, status: 404 };
+  }
+
+  async function deny(req: FastifyRequest, reply: FastifyReply): Promise<FastifyReply | null> {
+    const result = await authorize(req);
+    if (result.ok) return null;
+    return reply
+      .code(result.status)
+      .send({ error: result.status === 403 ? 'invalid csrf token' : 'not found' });
+  }
+
   app.get('/invite/:token', getInvitePage);
   app.post('/invite/:token', postInvite);
 
   app.post('/sumire/admin/invites', async (req, reply) => {
-    if (adminDenied(req)) return reply.code(404).send({ error: 'not found' });
+    const denied = await deny(req, reply);
+    if (denied) return denied;
     const body = readJsonBody(req.body) ?? {};
     const uses = body.uses === undefined ? 1 : body.uses;
     if (typeof uses !== 'number' || !Number.isInteger(uses) || uses < 1 || uses > 1000) {
@@ -239,7 +294,8 @@ export function registerInviteRoutes(app: FastifyInstance): void {
   });
 
   app.get('/sumire/admin/invites', async (req, reply) => {
-    if (adminDenied(req)) return reply.code(404).send({ error: 'not found' });
+    const denied = await deny(req, reply);
+    if (denied) return denied;
     const rows = await listInvites();
     return rows.map((row) => ({
       id: row.id,
@@ -253,7 +309,8 @@ export function registerInviteRoutes(app: FastifyInstance): void {
   });
 
   app.post('/sumire/admin/invites/:id/revoke', async (req, reply) => {
-    if (adminDenied(req)) return reply.code(404).send({ error: 'not found' });
+    const denied = await deny(req, reply);
+    if (denied) return denied;
     const { id } = req.params as { id: string };
     if (!/^\d+$/.test(id)) return reply.code(400).send({ error: 'id must be a number' });
     const revoked = await revokeInvite(Number(id));
@@ -263,7 +320,8 @@ export function registerInviteRoutes(app: FastifyInstance): void {
   });
 
   app.post('/sumire/admin/accounts/:publicUserId/reset-password', async (req, reply) => {
-    if (adminDenied(req)) return reply.code(404).send({ error: 'not found' });
+    const denied = await deny(req, reply);
+    if (denied) return denied;
     const { publicUserId } = req.params as { publicUserId: string };
     const seedId = publicUserId.trim().toUpperCase();
     const [acct] = await db.select().from(accounts).where(eq(accounts.seedId, seedId)).limit(1);

@@ -1,6 +1,7 @@
 {
   "en": {
     "notImplemented": "This feature is not implemented yet.",
+    "eventRelogRequired": "Event information has been updated. Returning to the title screen.",
     "inviteOnlyLogin": "Invite Only. Please Login using your link password.",
     "inviteOnlyBlocked": "This server is invite-only. Open Account → Enter Link Password.",
     "invalidCredentials": "Incorrect user ID or link password.",
@@ -11,6 +12,7 @@
   },
   "ja": {
     "notImplemented": "この機能はまだ実装されていません。",
+    "eventRelogRequired": "イベント情報が更新されました。タイトル画面に戻ります。",
     "inviteOnlyLogin": "招待制サーバーです。連携パスワードでログインしてください。",
     "inviteOnlyBlocked": "招待制サーバーです。アカウント → 連携パスワード入力 からログインしてください。",
     "invalidCredentials": "ユーザーIDまたは連携パスワードが正しくありません。",

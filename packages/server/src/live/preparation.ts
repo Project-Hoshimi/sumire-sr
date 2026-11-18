@@ -17,7 +17,7 @@ import type {
 } from './types.ts';
 import type { CardData } from './input.ts';
 import { npcBalance } from './data/npcBalance.ts';
-import { npcRosters } from './data/npcRosters.ts';
+import { rosterById } from '../services/rosters/cache.ts';
 import { lanesAreNeighbors } from './selectors.ts';
 import { n, s } from './util.ts';
 
@@ -84,7 +84,7 @@ export function NPCBalance(quest: Quest, setting: Setting): NPCBonuses {
 
 /** Returns a fresh protobuf-shaped object so callers cannot mutate shared settings. */
 export function NPCRoster(questID: string): QuestOpponentInfo {
-  const roster = npcRosters[questID];
+  const roster = rosterById(questID);
   if (roster === undefined) {
     throw new Error(`NPC roster for "${questID}" is not configured`);
   }

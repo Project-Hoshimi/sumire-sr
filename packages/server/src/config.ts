@@ -85,6 +85,15 @@ export function registrationMode(): RegistrationMode {
   throw new Error(`SUMIRE_REGISTRATION must be open, invite or closed (got ${JSON.stringify(raw)})`);
 }
 
+/**
+ * Forced relog when published event state changed since the session started.
+ * On by default; `SUMIRE_EVENT_RELOG=0` disables the check. Read per call so
+ * tests can toggle it in one process.
+ */
+export function eventRelogEnabled(): boolean {
+  return process.env.SUMIRE_EVENT_RELOG !== '0';
+}
+
 /** Bearer token for `/sumire/admin/*`; empty disables those routes (404). */
 export const ADMIN_TOKEN = process.env.SUMIRE_ADMIN_TOKEN || '';
 

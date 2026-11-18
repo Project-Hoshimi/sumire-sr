@@ -9,6 +9,8 @@ import { listMarathonQuestDifficulties } from '../../master/index.ts';
 import type { ConditionEvaluator } from '../conditions.ts';
 import { marathonOpponentInfo } from '../opponent.ts';
 import type { MarathonConfig } from './catalog.ts';
+import { npcLevelFor } from './plugin.ts';
+import { n } from './numeric.ts';
 import type { MarathonState } from './state.ts';
 import { marathonDifficultyConditionMet, marathonQuestAccess, type MarathonQuestAccessRow } from './unlock.ts';
 
@@ -22,7 +24,7 @@ const MARATHON_QUEST_DIFFICULTY_INFO_MSG = 'Solis.Common.Proto.Api.MarathonQuest
  */
 export async function buildMarathonQuestInfo(
   playerId: string,
-  config: Pick<MarathonConfig, 'questUnlockItemId' | 'npcRosters'>,
+  config: Pick<MarathonConfig, 'questUnlockItemId' | 'npcRosters' | 'npcLevelRules'>,
   quest: MarathonQuestAccessRow,
   state: MarathonState,
   exec: Executor = db,
@@ -63,6 +65,7 @@ export async function buildMarathonQuestInfo(
     DifficultyLevelInfos: difficulties.map((difficulty) => {
       const number = Number(difficulty.DifficultyNumber ?? 0);
       const diffState = questState?.diffs[String(number)];
+      const npcLevel = npcLevelFor(config, questId, n(difficulty.DifficultyLevel));
       return {
         __msg: MARATHON_QUEST_DIFFICULTY_INFO_MSG,
         MarathonQuestDifficultyNumber: number,
@@ -71,7 +74,12 @@ export async function buildMarathonQuestInfo(
         Plus: diffState?.plus ?? 0,
         Unlocked: difficultyUnlocked.get(number) ?? false,
         HighestScore: diffState?.highestScore ?? 0,
-        OpponentInfo: marathonOpponentInfo(questId, difficulty as unknown as Decoded, config.npcRosters),
+        OpponentInfo: marathonOpponentInfo(
+          questId,
+          difficulty as unknown as Decoded,
+          config.npcRosters,
+          npcLevel,
+        ),
       } as Decoded;
     }),
   } as Decoded;
