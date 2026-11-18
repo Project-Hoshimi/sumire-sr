@@ -86,9 +86,9 @@ export const adminUiRoutes: FastifyPluginAsync<AdminUiOptions> = async (app, opt
     maxAge: '1y',
     immutable: true,
     setHeaders(res) {
-      res.setHeader('Content-Security-Policy', ADMIN_UI_CSP);
-      res.setHeader('X-Content-Type-Options', 'nosniff');
-      res.setHeader('Referrer-Policy', 'no-referrer');
+      res.header('Content-Security-Policy', ADMIN_UI_CSP);
+      res.header('X-Content-Type-Options', 'nosniff');
+      res.header('Referrer-Policy', 'no-referrer');
     },
   });
 
