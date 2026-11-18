@@ -267,6 +267,13 @@
       "when": 1794727880840,
       "tag": "0039_event_builder",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1794980521518,
+      "tag": "0040_event_builder_admin",
+      "breakpoints": true
     }
   ]
 }

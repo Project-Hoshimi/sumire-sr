@@ -1,12 +1,14 @@
-import { eq } from 'drizzle-orm';
+import { eq, like } from 'drizzle-orm';
 import { db } from '../../db/client.ts';
 import { sql } from 'drizzle-orm';
 import {
   eventDefinitions,
   eventDefinitionHistory,
   eventSchedule,
+  serverMeta,
 } from '../../db/schema.ts';
 import {
+  DELETED_EVENT_PREFIX,
   type EventDefinitionRow,
   type EventHistoryRow,
   type EventScheduleRow,
@@ -30,6 +32,56 @@ export function drizzleEventStore(database: Database = db): EventStore {
         .where(eq(eventDefinitions.id, id))
         .limit(1);
       return rows[0];
+    },
+    async deleteDefinition(id): Promise<void> {
+      // event_schedule and event_definition_history cascade from the FK.
+      await database.delete(eventDefinitions).where(eq(eventDefinitions.id, id));
+    },
+    async markDeleted(id, by): Promise<void> {
+      const value = JSON.stringify({ at: new Date().toISOString(), by });
+      await database
+        .insert(serverMeta)
+        .values({ key: `${DELETED_EVENT_PREFIX}${id}`, value })
+        .onConflictDoUpdate({
+          target: serverMeta.key,
+          set: { value, updatedAt: sql`now()` },
+        });
+    },
+    async clearDeleted(id): Promise<void> {
+      await database
+        .delete(serverMeta)
+        .where(eq(serverMeta.key, `${DELETED_EVENT_PREFIX}${id}`));
+    },
+    async listDeleted(): Promise<Set<string>> {
+      const rows = await database
+        .select({ key: serverMeta.key })
+        .from(serverMeta)
+        // '_' is a LIKE wildcard; the startsWith filter below keeps only exact-prefix keys.
+        .where(like(serverMeta.key, `${DELETED_EVENT_PREFIX}%`));
+      return new Set(
+        rows
+          .filter((row) => row.key.startsWith(DELETED_EVENT_PREFIX))
+          .map((row) => row.key.slice(DELETED_EVENT_PREFIX.length)),
+      );
+    },
+    async updateDraft(id, update): Promise<void> {
+      await database
+        .update(eventDefinitions)
+        .set({
+          draft: update.draft,
+          ...(update.title !== undefined ? { title: update.title } : {}),
+          updatedBy: update.updatedBy,
+          updatedAt: sql`now()`,
+        })
+        .where(eq(eventDefinitions.id, id));
+    },
+    async replaceSchedule(eventId, schedule): Promise<void> {
+      await database.transaction(async (tx) => {
+        await tx.delete(eventSchedule).where(eq(eventSchedule.eventId, eventId));
+        if (schedule.length > 0) {
+          await tx.insert(eventSchedule).values(schedule);
+        }
+      });
     },
     async createDefinition(def: NewEventDefinition, schedule: NewEventSchedule[]): Promise<void> {
       await database.transaction(async (tx) => {

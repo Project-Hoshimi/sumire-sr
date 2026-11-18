@@ -2,13 +2,20 @@
  * Pure box-gacha mathematics for the Marathon event.
  *
  * There is no master table for box contents; the catalogue JSON authors them
- * (`MarathonConfig.boxGachas`). Per-player draw counts live in `state.ts`, so
- * everything here takes `drawn` explicitly and never touches the database.
+ * (`MarathonConfig.boxGachas`). Per-player draw counts live in `state.ts` keyed
+ * by `itemKey`, so everything here takes `drawn` explicitly and never touches
+ * the database.
  */
 
-/** One authored entry in a box. `order` is the stable identity used by state. */
+/**
+ * One authored entry in a box. `order` is the displayed position; `itemKey` is
+ * the stable identity used by saved draw counts, so reordering the box never
+ * moves a player's progress to another item. Catalogue authors may omit
+ * `itemKey`, in which case the parser defaults it to `String(order)`.
+ */
 export interface BoxItemDef {
   order: number;
+  itemKey?: string;
   itemType: number;
   rewardId?: string;
   liveBonusGroupId?: string;
@@ -17,8 +24,21 @@ export interface BoxItemDef {
   isLimited?: boolean;
   /** Pickup prize: drives reset eligibility and PickupResults. */
   isPickup?: boolean;
+  /**
+   * Optional overall per-draw chance of this item while it still has stock.
+   * Only meaningful on a limited item (`isLimited: true`). Unrated limited
+   * items share the remainder of the finite budget by remaining stock. Once a
+   * rated item is exhausted its rate moves to the infinite tier instead of
+   * being renormalised across the remaining finite items.
+   */
+  rate?: number;
   assetId?: string;
   description?: string;
+}
+
+/** A parsed box item: the plugin has resolved `itemKey` on every item. */
+export interface CompiledBoxItemDef extends BoxItemDef {
+  itemKey: string;
 }
 
 /** One box definition in the catalogue: its ordered contents. */
@@ -26,7 +46,12 @@ export interface BoxDef {
   items: BoxItemDef[];
 }
 
-/** Per-player progress for one box: how many of each order were drawn. */
+/** One compiled box definition: every item carries its resolved `itemKey`. */
+export interface CompiledBoxDef {
+  items: CompiledBoxItemDef[];
+}
+
+/** Per-player progress for one box: how many of each item key were drawn. */
 export interface BoxDrawState {
   drawn: Record<string, number>;
   resetCount: number;
@@ -37,32 +62,32 @@ export interface BoxResetRule {
   resetLimitCount: number;
 }
 
-function drawnCount(drawn: Record<string, number>, order: number): number {
-  return drawn[String(order)] ?? 0;
+function drawnCount(drawn: Record<string, number>, itemKey: string): number {
+  return drawn[itemKey] ?? 0;
 }
 
 /**
  * Stock per item, sorted by `order`. A finite item (`isLimited: true`) has its
- * authored initial stock minus the draws recorded for that order, never below
+ * authored initial stock minus the draws recorded for that item key, never below
  * zero. An infinite item (`isLimited` not true) always reports its initial stock,
  * ignoring any recorded draws. Does not mutate `items` or `drawn`.
  */
 export function boxItemStocks(
-  items: BoxItemDef[],
+  items: CompiledBoxItemDef[],
   drawn: Record<string, number>,
-): { def: BoxItemDef; stock: number }[] {
+): { def: CompiledBoxItemDef; stock: number }[] {
   return [...items]
     .sort((a, b) => a.order - b.order)
     .map((def) => ({ def, stock: itemStock(def, drawn) }));
 }
 
-function itemStock(def: BoxItemDef, drawn: Record<string, number>): number {
+function itemStock(def: CompiledBoxItemDef, drawn: Record<string, number>): number {
   if (def.isLimited !== true) return def.initialStock;
-  return Math.max(0, def.initialStock - drawnCount(drawn, def.order));
+  return Math.max(0, def.initialStock - drawnCount(drawn, def.itemKey));
 }
 
 /** Total remaining finite stock. Infinite items are excluded from the count. */
-export function remainingStock(items: BoxItemDef[], drawn: Record<string, number>): number {
+export function remainingStock(items: CompiledBoxItemDef[], drawn: Record<string, number>): number {
   return items
     .filter((def) => def.isLimited === true)
     .reduce((sum, def) => sum + itemStock(def, drawn), 0);
@@ -73,7 +98,7 @@ export function remainingStock(items: BoxItemDef[], drawn: Record<string, number
  * (`isLimited: true`) still has stock equal to its initial stock. Infinite items
  * are ignored, and a box with no finite items is full.
  */
-export function isBoxFull(items: BoxItemDef[], drawn: Record<string, number>): boolean {
+export function isBoxFull(items: CompiledBoxItemDef[], drawn: Record<string, number>): boolean {
   return boxItemStocks(items, drawn).every(
     ({ def, stock }) => def.isLimited !== true || stock === def.initialStock,
   );
@@ -114,8 +139,55 @@ export function resolveDrawCount(input: DrawCountInput): number {
   return requested;
 }
 
+/** The per-box draw-rate budget implied by the authored items and infinite rate. */
+export interface BoxRateBudget {
+  /** Chance of the infinite tier: authored rate, else the initial-stock ratio. */
+  pInf: number;
+  /** Total weight left for the finite tier (`1 - pInf`). */
+  finiteBudget: number;
+  /** Sum of every configured limited-item `rate` in the box. */
+  assigned: number;
+  /** `finiteBudget - assigned`; negative means the authored rates overspend. */
+  available: number;
+}
+
 /**
- * Pick `count` orders without replacement.
+ * Per-box draw-rate budget. `pInf` is the authored `infiniteRate` clamped to
+ * [0, 1] when the box has an infinite item with stock, the initial-stock ratio
+ * `infInit / (infInit + finInit)` when no rate is authored, and 0 when the box
+ * has no infinite items. `assigned` sums every authored limited-item rate,
+ * regardless of remaining stock, so the unrated pool's weight stays fixed for
+ * the whole box. `available` may be negative when the rates overspend.
+ */
+export function boxRateBudget(
+  items: readonly BoxItemDef[],
+  infiniteRate?: number,
+): BoxRateBudget {
+  let infInit = 0;
+  let finInit = 0;
+  let assigned = 0;
+  for (const def of items) {
+    if (def.isLimited === true) {
+      finInit += def.initialStock;
+      if (typeof def.rate === 'number' && Number.isFinite(def.rate)) assigned += def.rate;
+    } else if (def.initialStock > 0) {
+      infInit += def.initialStock;
+    }
+  }
+  let pInf: number;
+  if (infInit <= 0) {
+    pInf = 0;
+  } else if (typeof infiniteRate === 'number' && Number.isFinite(infiniteRate)) {
+    pInf = Math.min(1, Math.max(0, infiniteRate));
+  } else {
+    pInf = infInit + finInit > 0 ? infInit / (infInit + finInit) : 0;
+  }
+  const finiteBudget = 1 - pInf;
+  return { pInf, finiteBudget, assigned, available: finiteBudget - assigned };
+}
+
+/**
+ * Pick `count` item keys without replacement.
  *
  * Each draw first chooses a tier, then an item inside that tier. Infinite items
  * are weighted by their initial stock; finite items by their remaining stock.
@@ -123,63 +195,167 @@ export function resolveDrawCount(input: DrawCountInput): number {
  * chance `infInit / (infInit + finInit)` (initial stock totals, set once per box),
  * so drawing finite stock never shifts odds toward infinite items. When one tier
  * is empty, the other tier is used. Only finite items are decremented after a pick.
- * `rng` returns [0, 1). Stops early when no item can be drawn.
+ * `rng` returns [0, 1). Stops early when no item can be drawn. The result holds
+ * `itemKey`s, the same identity the box state records draws under.
  * Does not mutate `items` or `drawn`.
+ *
+ * On the rate path (the box authors at least one limited-item `rate`) an
+ * exhausted finite candidate's weight is not spread over the remaining finite
+ * items: the fixed chance above is raised by the exhausted shares, clamped to
+ * [0, 1], before the tier roll.
  *
  * When `infiniteRate` is a finite number it replaces the ratio as the infinite
  * tier chance, clamped to [0, 1]. It is only consulted while both tiers still
  * have items.
+ *
+ * A limited item may author a `rate`, its overall per-draw chance while in
+ * stock. Inside the finite tier a rated item is weighted by that rate and the
+ * unrated items together by `max(0, finiteBudget - sum of all authored rates)`,
+ * split between them by remaining stock. With an infinite tier present, an
+ * exhausted candidate's weight does not renormalise onto the remaining finite
+ * items: each exhausted rated item's rate is added to the infinite tier chance,
+ * and when the unrated pool has no stock left (every unrated limited item is
+ * exhausted, or there are none) the pool weight moves there too. The per-draw
+ * infinite chance is therefore `clamp(pInf + sum of exhausted rates + (pool
+ * exhausted ? poolWeight : 0), 0, 1)`. When the box has no infinite items there
+ * is nowhere to send that share, so the exhausted weights renormalise among the
+ * in-stock finite items instead. When every candidate weighs 0, the draw falls
+ * back to plain remaining-stock weighting over the in-stock finite items.
+ * With no rates authored anywhere, the finite tier is exactly the old
+ * remaining-stock weighting, including the rng call order.
  */
 export function pickBoxDraws(
-  items: BoxItemDef[],
+  items: CompiledBoxItemDef[],
   drawn: Record<string, number>,
   count: number,
   rng: () => number,
   infiniteRate?: number,
-): number[] {
+): string[] {
   const remaining = boxItemStocks(items, drawn).map(({ def, stock }) => ({
-    order: def.order,
+    itemKey: def.itemKey,
     stock,
     finite: def.isLimited === true,
+    rate:
+      def.isLimited === true && typeof def.rate === 'number' && Number.isFinite(def.rate)
+        ? def.rate
+        : undefined,
   }));
   let infInit = 0;
-  let finInit = 0;
   for (const def of items) {
-    if (def.isLimited === true) finInit += def.initialStock;
-    else if (def.initialStock > 0) infInit += def.initialStock;
+    if (def.isLimited !== true && def.initialStock > 0) infInit += def.initialStock;
   }
-  const ratioInf = infInit + finInit > 0 ? infInit / (infInit + finInit) : 0;
-  const pInf =
-    typeof infiniteRate === 'number' && Number.isFinite(infiniteRate)
-      ? Math.min(1, Math.max(0, infiniteRate))
-      : ratioInf;
-  const orders: number[] = [];
+  const budget = boxRateBudget(items, infiniteRate);
+  const pInf = budget.pInf;
+  // The unrated pool is weighted from the configured rates, not only the
+  // in-stock ones, so an exhausted rated item does not inflate the pool.
+  const poolWeight = Math.max(0, budget.available);
+  const hasRates = items.some((def) => def.isLimited === true && def.rate !== undefined);
+  const hasInfinite = infInit > 0;
+  const keys: string[] = [];
   for (let i = 0; i < count; i++) {
     const finRemain = remaining.reduce((sum, item) => (item.finite ? sum + item.stock : sum), 0);
-    if (finRemain <= 0 && infInit <= 0) break;
+    if (finRemain <= 0 && !hasInfinite) break;
     let pickInfinite: boolean;
-    if (finRemain <= 0) pickInfinite = true;
-    else if (infInit <= 0) pickInfinite = false;
-    else pickInfinite = rng() < pInf;
-    const tierTotal = pickInfinite ? infInit : finRemain;
-    const weight = (item: { stock: number; finite: boolean }): number => {
-      if (item.finite) return pickInfinite ? 0 : item.stock;
-      return pickInfinite && item.stock > 0 ? item.stock : 0;
-    };
-    let target = rng() * tierTotal;
+    let finitePoolWeight = poolWeight;
+    if (finRemain <= 0) {
+      pickInfinite = true;
+    } else if (!hasInfinite) {
+      pickInfinite = false;
+    } else {
+      // Exhausted finite weight goes to the infinite tier, not to the
+      // remaining finite candidates.
+      let pInfEff = pInf;
+      if (hasRates) {
+        let poolStock = 0;
+        for (const item of remaining) {
+          if (!item.finite) continue;
+          if (item.rate !== undefined) {
+            if (item.stock <= 0) pInfEff += item.rate;
+          } else {
+            poolStock += item.stock;
+          }
+        }
+        if (poolStock <= 0) {
+          pInfEff += poolWeight;
+          finitePoolWeight = 0;
+        }
+      }
+      pInfEff = Math.min(1, Math.max(0, pInfEff));
+      pickInfinite = rng() < pInfEff;
+    }
     let chosen = -1;
-    for (let j = 0; j < remaining.length; j++) {
-      const w = weight(remaining[j]);
-      if (w <= 0) continue;
-      chosen = j;
-      target -= w;
-      if (target < 0) break;
+    if (!pickInfinite && hasRates) {
+      chosen = pickRatedFinite(remaining, finitePoolWeight, rng);
+    } else {
+      const tierTotal = pickInfinite ? infInit : finRemain;
+      const weight = (item: { stock: number; finite: boolean }): number => {
+        if (item.finite) return pickInfinite ? 0 : item.stock;
+        return pickInfinite && item.stock > 0 ? item.stock : 0;
+      };
+      let target = rng() * tierTotal;
+      for (let j = 0; j < remaining.length; j++) {
+        const w = weight(remaining[j]);
+        if (w <= 0) continue;
+        chosen = j;
+        target -= w;
+        if (target < 0) break;
+      }
     }
     if (chosen < 0) break;
-    orders.push(remaining[chosen].order);
+    keys.push(remaining[chosen].itemKey);
     if (remaining[chosen].finite) remaining[chosen].stock -= 1;
   }
-  return orders;
+  return keys;
+}
+
+/**
+ * Pick one item inside the finite tier when at least one item authors a rate.
+ * Rated items weigh their rate; the unrated pool weighs `poolWeight` in total,
+ * split between its items by remaining stock. The caller lowers `poolWeight` to
+ * 0 when the pool is exhausted, because that share has moved to the infinite
+ * tier. Candidates with no weight drop out. When every candidate weighs 0 (for
+ * example the pool weight is 0 and only unrated items are left in stock), the
+ * draw falls back to plain remaining-stock weighting over the in-stock finite
+ * items.
+ */
+function pickRatedFinite(
+  remaining: readonly { stock: number; finite: boolean; rate?: number }[],
+  poolWeight: number,
+  rng: () => number,
+): number {
+  let poolStock = 0;
+  for (const item of remaining) {
+    if (item.finite && item.stock > 0 && item.rate === undefined) poolStock += item.stock;
+  }
+  const weights: number[] = [];
+  let total = 0;
+  for (const item of remaining) {
+    let w = 0;
+    if (item.finite && item.stock > 0) {
+      if (item.rate !== undefined) w = item.rate;
+      else if (poolStock > 0) w = (poolWeight * item.stock) / poolStock;
+    }
+    weights.push(w);
+    total += w;
+  }
+  if (!(total > 0)) {
+    total = 0;
+    for (let j = 0; j < remaining.length; j++) {
+      const w = remaining[j].finite ? remaining[j].stock : 0;
+      weights[j] = w;
+      total += w;
+    }
+  }
+  let target = rng() * total;
+  let chosen = -1;
+  for (let j = 0; j < weights.length; j++) {
+    const w = weights[j];
+    if (w <= 0) continue;
+    chosen = j;
+    target -= w;
+    if (target < 0) break;
+  }
+  return chosen;
 }
 
 /**
@@ -190,7 +366,7 @@ export function pickBoxDraws(
  */
 export function canResetBox(
   box: BoxResetRule,
-  items: BoxItemDef[],
+  items: CompiledBoxItemDef[],
   drawn: Record<string, number>,
   resetCount: number,
 ): boolean {

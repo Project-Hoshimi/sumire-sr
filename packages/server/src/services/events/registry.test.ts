@@ -212,7 +212,7 @@ test('a disabled schedule row is not open', async () => {
   assert.equal(eventWindowAt('marathon', 'marathon-disabled', A_STARTS + DAY_MS), undefined);
 });
 
-test('overlapping events are both returned, ordered by start, and warned about', async () => {
+test('overlapping events are both returned, ordered by start, without warnings', async () => {
   const warn = test.mock.method(console, 'warn', () => undefined);
   const a = scheduledDraft('marathon-test-a', '2026-11-13T00:00:00Z', '2026-11-28T00:00:00Z', '2026-12-05T00:00:00Z');
   const b = scheduledDraft('marathon-test-b', '2026-11-20T00:00:00Z', '2026-12-10T00:00:00Z', '2026-12-17T00:00:00Z');
@@ -222,22 +222,10 @@ test('overlapping events are both returned, ordered by start, and warned about',
   const open = openEvents('marathon', now);
   assert.deepEqual(open.map((e) => e.id), ['marathon-test-a', 'marathon-test-b']);
 
+  // Overlapping marathon schedules are supported, so nothing is warned about.
   const messages = warn.mock.calls.map((call) => String(call.arguments[0] ?? ''));
-  const overlap = messages.filter((m) => m.includes('marathon-test-a') && m.includes('marathon-test-b'));
-  assert.equal(overlap.length, 1, 'exactly one warning mentioning both ids');
-
-  // Back-to-back windows (B starts exactly when A ends) do not overlap.
+  assert.equal(messages.filter((m) => m.includes('overlapping')).length, 0);
   warn.mock.restore();
-  resetEventRegistryForTests();
-  store = memoryEventStore();
-  const warn2 = test.mock.method(console, 'warn', () => undefined);
-  const c = scheduledDraft('marathon-test-a', '2026-11-13T00:00:00Z', '2026-11-28T00:00:00Z', '2026-12-05T00:00:00Z');
-  const d = scheduledDraft('marathon-test-b', '2026-11-28T00:00:00Z', '2026-12-10T00:00:00Z', '2026-12-17T00:00:00Z');
-  await initEventRegistry({ store, drafts: asDrafts(c, d) });
-  const messages2 = warn.mock.calls
-    .slice(warn.mock.calls.length - warn2.mock.calls.length)
-    .map((call) => String(call.arguments[0] ?? ''));
-  assert.equal(messages2.filter((m) => m.includes('overlapping')).length, 0);
 });
 
 test('marathonConfig serves the registry after init, not the catalog files', async () => {

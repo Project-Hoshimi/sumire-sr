@@ -124,9 +124,9 @@ register(
           throw new Error(`${RPC_DRAW}: ${(err as Error).message}`);
         }
 
-        const orders = pickBoxDraws(items, drawn, count, Math.random, config.boxInfiniteRate);
-        if (orders.length !== count) {
-          throw new Error(`${RPC_DRAW}: picked ${orders.length} of ${count} draws`);
+        const itemKeys = pickBoxDraws(items, drawn, count, Math.random, config.boxInfiniteRate);
+        if (itemKeys.length !== count) {
+          throw new Error(`${RPC_DRAW}: picked ${itemKeys.length} of ${count} draws`);
         }
 
         if (cost > 0) {
@@ -141,14 +141,13 @@ register(
         const boxes = (state.boxes ??= {});
         const progress = boxes[boxGachaId] ?? { drawn: {}, resetCount: 0 };
         boxes[boxGachaId] = progress;
-        const byOrder = new Map(items.map((item) => [item.order, item]));
+        const byKey = new Map(items.map((item) => [item.itemKey, item]));
         const rng = new Rand(new PCG(seed ^ 0x626f786761636861n, seed));
         const drawResults: Decoded[] = [];
         const pickupResults: Decoded[] = [];
-        for (const order of orders) {
-          const item = byOrder.get(order);
+        for (const key of itemKeys) {
+          const item = byKey.get(key);
           if (!item) continue;
-          const key = String(order);
           progress.drawn[key] = (progress.drawn[key] ?? 0) + 1;
           // Item type 2 hands out an owned live bonus from a master group;
           // item type 1 grants a master Reward. Adding owned live bonuses to the
@@ -158,7 +157,7 @@ register(
           if (item.itemType === 2) {
             const groupId = item.liveBonusGroupId ?? '';
             if (groupId === '') {
-              throw new Error(`${RPC_DRAW}: box item ${order} has no live bonus group`);
+              throw new Error(`${RPC_DRAW}: box item ${item.order} has no live bonus group`);
             }
             const ids = await listMarathonLiveBonusIds(groupId);
             if (ids.length === 0) {

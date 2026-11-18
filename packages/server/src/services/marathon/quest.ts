@@ -52,6 +52,8 @@ import { simulate } from '../../live/engine.ts';
 import type { Input } from '../../live/input.ts';
 import type { LiveResult } from '../../live/types.ts';
 import { marathonConfig, marathonWindowFor } from './catalog.ts';
+import { npcLevelFor } from './plugin.ts';
+import { n } from './numeric.ts';
 import { ensureMarathonMissionRows } from './eventInfo.ts';
 import { liveBonusInfos } from './liveBonus.ts';
 import { marathonBonusEffects, marathonLiveAbilityLevel, marathonPassiveEffects } from './liveBonusEffect.ts';
@@ -69,11 +71,6 @@ const RANK_PATTERN_AREA_TYPE_DAILY = 3;
 
 /** `PhotoAbilityType.ManagerExp` in `../quest.ts`: card manager-exp bonus. */
 const PHOTO_ABILITY_MANAGER_EXP = 14;
-
-function n(value: unknown): number {
-  const parsed = Number(value ?? 0);
-  return Number.isFinite(parsed) ? parsed : 0;
-}
 
 function s(value: unknown): string {
   return value == null ? '' : String(value);
@@ -212,6 +209,10 @@ register(
         // live abilities and land before the card stat pass.
         const inputReport: PrepareLiveInputReport = { droppedBonusSkills: 0 };
         const npcRosterId = config.npcRosters?.[marathonQuestId];
+        const npcLevel =
+          npcRosterId === undefined
+            ? undefined
+            : npcLevelFor(config, marathonQuestId, n(diff.DifficultyLevel));
         const input = await prepareLiveInput(
           playerId,
           reqLike,
@@ -225,8 +226,8 @@ register(
             report: inputReport,
             npcRosterId,
             // A mapped roster keeps its authored levels; scale them to this
-            // difficulty so the opponent matches the stage.
-            ...(npcRosterId === undefined ? {} : { npcLevel: n(diff.DifficultyLevel) }),
+            // stage's level rule (difficulty level when none is authored).
+            ...(npcLevel === undefined ? {} : { npcLevel }),
           },
         );
         if (inputReport.droppedBonusSkills > 0) {

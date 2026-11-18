@@ -12,9 +12,20 @@ export interface ValidationIssue {
   severity: 'error' | 'warning';
 }
 
+/**
+ * One player-state consequence of publishing a draft. A `block` impact that
+ * affects at least one player refuses the publish; a `warn` impact never does.
+ * `requiresPlayerCheck` impacts are counted per player by `previewPublish`.
+ */
 export interface StateImpact {
-  kind: string;
+  code: string;
+  severity: 'block' | 'warn';
   message: string;
+  boxId?: string;
+  itemKey?: string;
+  questId?: string;
+  newStock?: number;
+  requiresPlayerCheck: boolean;
 }
 
 export interface EditorField {
@@ -44,9 +55,22 @@ export interface EventPlugin<Draft = unknown, Runtime = unknown> {
   draftTitle(draft: Draft): string;
   draftSchedule(draft: Draft): EventScheduleInput | undefined;
   importFromMaster(eventId: string): Promise<Draft>;
+  /**
+   * Optional starting draft for a brand-new definition. The admin API uses it
+   * when a create request omits `draft`; `id` and `title` come from the
+   * request so the new draft already carries the author's choices.
+   */
+  defaultDraft?(id: string, title: string): Draft;
   validate(draft: Draft): ValidationIssue[];
   compile(draft: Draft): Runtime;
-  stateImpact(prev: Draft, next: Draft): StateImpact[];
+  /** Player-state consequences of replacing the published draft; `published` is undefined before the first publish. `rawDraft` is the unparsed candidate (before any key/default normalisation) when the caller has it. */
+  stateImpact(published: Draft | undefined, draft: Draft, rawDraft?: unknown): StateImpact[];
+  /**
+   * Optional startup migration: return an upgraded copy of a stored draft (or
+   * its published JSON), or null when it needs no change. Must be idempotent —
+   * `initEventRegistry` re-runs it on every boot.
+   */
+  upgradeDraft?(draft: unknown): unknown | null;
 }
 
 const plugins = new Map<string, EventPlugin>();

@@ -14,11 +14,18 @@ import { registerFirebaseEmu } from './firebaseEmu.ts';
 import { registerFirebaseStorage } from './firebaseStorage.ts';
 import { registerNarrativePendingRoute } from './services/narrativePending.ts';
 import { registerInviteRoutes } from './routes/invites.ts';
+import { adminRoutes } from './routes/admin.ts';
+import { adminEventRoutes } from './routes/adminEvents.ts';
+import { adminRosterRoutes } from './routes/adminRosters.ts';
+import { adminLookupRoutes } from './routes/adminLookup.ts';
+import { adminUiRoutes } from './routes/adminUi.ts';
+import { drizzleAdminStore } from './services/admin/store.drizzle.ts';
+import cookie from '@fastify/cookie';
 import { registerAssetMirror } from './assetMirror.ts';
 import { registerOctoStore } from './octoStore.ts'; // experimental, opt-in (SUMIRE_OCTO_DATABASE)
 import { MASTER_BLOBS_DIR } from './services/master.ts';
 import { catalogDrafts } from './services/marathon/catalog.ts';
-import { initEventRegistry, openEvents } from './services/events/registry.ts';
+import { initEventRegistry, openEvents, registryLoaded, reloadEventRegistry } from './services/events/registry.ts';
 import { isSandbox } from './profile.ts';
 import { isMainModule } from './mainModule.ts';
 import { titleVariantBlobPath } from './profiles/sandbox/titleBackground.ts';
@@ -35,6 +42,8 @@ const HOP_BY_HOP = new Set([
 
 /** Upper bound on the startup event-registry load before falling back to catalog files. */
 const EVENT_REGISTRY_TIMEOUT_MS = 10_000;
+/** Upper bound on the startup NPC roster cache load before falling back to the checked-in constant. */
+const ROSTER_CACHE_TIMEOUT_MS = 10_000;
 
 async function proxyHandler(req: FastifyRequest, reply: FastifyReply) {
   req.log.info({ proxyUrl: req.url }, 'proxy handler entered');
@@ -324,6 +333,10 @@ export function buildServer(): FastifyInstance {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const app = Fastify(opts as any) as unknown as FastifyInstance;
 
+  // Cookie parsing for admin sessions (no signing secret: tokens are random
+  // and only their SHA-256 digest is stored).
+  app.register(cookie);
+
   app.addContentTypeParser(
     /^.*$/,
     { parseAs: 'buffer' },
@@ -372,7 +385,18 @@ export function buildServer(): FastifyInstance {
   // Pending idol messages/calls for the mod's local notifications.
   registerNarrativePendingRoute(app);
   // Invite pages and the token-guarded admin API (docs/LOGIN_FLOW.md).
-  registerInviteRoutes(app);
+  // Admin sessions and the owner-only user API share one store.
+  const adminStore = drizzleAdminStore();
+  registerInviteRoutes(app, { store: adminStore });
+  app.register(adminRoutes, { store: adminStore });
+  // Event definition/schedule and NPC roster editors share the admin store.
+  app.register(adminEventRoutes, { admin: { store: adminStore } });
+  app.register(adminRosterRoutes, { admin: { store: adminStore } });
+  // Read-only master-data lookups and the built admin console UI. The UI only
+  // owns `/sumire/admin` (redirect), `/sumire/admin/` and `/sumire/admin/assets/*`,
+  // so the JSON API routes above are never shadowed.
+  app.register(adminLookupRoutes, { admin: { store: adminStore } });
+  app.register(adminUiRoutes);
   // Local asset mirror of extracted final artifacts (docs/ASSET_MIRROR.md).
   // Opt-in via SUMIRE_ASSET_MIRROR_DIR; separate from the `/v2/*` Octo proxy.
   registerAssetMirror(app, config.assetMirrorDir);
@@ -407,6 +431,45 @@ export async function start() {
   // pair from …" line (or the loud WARNING when a new key is generated) must be
   // visible in the server log next to "Server listening".
   publicKeyFingerprint();
+  // Seed and load the DB-backed NPC roster cache. The synchronous roster
+  // lookups fall back to the checked-in constant, so a database failure or a
+  // timeout must not stop the server either.
+  let rosterTimer: ReturnType<typeof setTimeout> | undefined;
+  let rosterTimedOut = false;
+  try {
+    const timeout = new Promise<never>((_resolve, reject) => {
+      rosterTimer = setTimeout(() => {
+        rosterTimedOut = true;
+        reject(new Error('roster cache load timed out'));
+      }, ROSTER_CACHE_TIMEOUT_MS);
+      (rosterTimer as { unref?: () => void }).unref?.();
+    });
+    const { drizzleRosterStore } = await import('./services/rosters/store.drizzle.ts');
+    const { initRosterCache, listRosterIds } = await import('./services/rosters/cache.ts');
+    const rosterLoad = initRosterCache({ store: drizzleRosterStore() });
+    // If the timeout wins, the load keeps running in the background. When it
+    // later succeeds and the event registry is already loaded, refresh the
+    // registry so the late roster rows are visible. Failures are only logged.
+    rosterLoad.then(
+      () => {
+        if (!rosterTimedOut || !registryLoaded()) return;
+        reloadEventRegistry().catch((error) => {
+          console.error('[events] registry not refreshed after a late roster load:', error);
+        });
+      },
+      () => undefined,
+    );
+    await Promise.race([rosterLoad, timeout]);
+    console.log('[rosters] cache loaded', { count: listRosterIds().length });
+  } catch (error) {
+    if (rosterTimedOut) {
+      console.error('[rosters] cache load timed out after 10s, falling back to the checked-in rosters');
+    } else {
+      console.error('[rosters] cache not loaded, falling back to the checked-in rosters:', error);
+    }
+  } finally {
+    if (rosterTimer !== undefined) clearTimeout(rosterTimer);
+  }
   // Import catalog events with no definition yet, then compile the published
   // ones. A database failure or a timeout must not stop the server: the marathon
   // services then fall back to the checked-in catalog files, whose authored

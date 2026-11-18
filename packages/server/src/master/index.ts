@@ -908,6 +908,55 @@ export async function getMarathonLiveBonus(id: string) {
   return row ?? null;
 }
 
+/** One marathon id in master data with its row counts per marathon table. */
+export interface MasterMarathonSummary {
+  id: string;
+  questCount: number;
+  boxGachaCount: number;
+}
+
+/**
+ * Every marathon id referenced by `master_MarathonQuest` or
+ * `master_MarathonBoxGachaSetting`, with the row count of each table, sorted by
+ * id ascending. Ids present in only one table get a zero count for the other.
+ */
+export async function listMasterMarathons(): Promise<MasterMarathonSummary[]> {
+  const [quests, boxes] = await Promise.all([
+    db
+      .select({
+        id: master.masterMarathonQuest.MarathonId,
+        count: sql<number>`count(*)::int`,
+      })
+      .from(master.masterMarathonQuest)
+      .groupBy(master.masterMarathonQuest.MarathonId),
+    db
+      .select({
+        id: master.masterMarathonBoxGachaSetting.MarathonId,
+        count: sql<number>`count(*)::int`,
+      })
+      .from(master.masterMarathonBoxGachaSetting)
+      .groupBy(master.masterMarathonBoxGachaSetting.MarathonId),
+  ]);
+
+  const byId = new Map<string, MasterMarathonSummary>();
+  for (const row of quests) {
+    const id = String(row.id ?? '');
+    if (id === '') continue;
+    byId.set(id, { id, questCount: Number(row.count ?? 0), boxGachaCount: 0 });
+  }
+  for (const row of boxes) {
+    const id = String(row.id ?? '');
+    if (id === '') continue;
+    const found = byId.get(id) ?? { id, questCount: 0, boxGachaCount: 0 };
+    found.boxGachaCount = Number(row.count ?? 0);
+    byId.set(id, found);
+  }
+
+  return [...byId.values()].sort((a, b) =>
+    a.id < b.id ? -1 : a.id > b.id ? 1 : 0,
+  );
+}
+
 export async function listMarathonQuests(marathonId: string) {
   return db
     .select()
@@ -1099,6 +1148,243 @@ export async function listItemsByType(type: number) {
 export async function listCardsByIds(ids: string[]) {
   if (ids.length === 0) return [];
   return db.select().from(master.masterCard).where(inArray(master.masterCard.Id, ids));
+}
+
+/** Bulk reward lookup by id (admin reward descriptions). */
+export async function listRewardsByIds(ids: string[]) {
+  if (ids.length === 0) return [];
+  return db.select().from(master.masterReward).where(inArray(master.masterReward.Id, ids));
+}
+
+/** Every reward row; used to search rewards by resolved resource name. */
+export async function listAllRewards() {
+  return db.select().from(master.masterReward);
+}
+
+/** Bulk `MarathonLiveBonusGroup` rows for the given group ids. */
+export async function listMarathonLiveBonusGroupRows(groupIds: string[]) {
+  if (groupIds.length === 0) return [];
+  return db
+    .select()
+    .from(master.masterMarathonLiveBonusGroup)
+    .where(inArray(master.masterMarathonLiveBonusGroup.GroupId, groupIds));
+}
+
+/** Every `MarathonLiveBonusGroup` row; used by the group id/name search. */
+export async function listAllMarathonLiveBonusGroupRows() {
+  return db.select().from(master.masterMarathonLiveBonusGroup);
+}
+
+/** Bulk `MarathonLiveBonus` lookup by id. */
+export async function listMarathonLiveBonuses(ids: string[]) {
+  if (ids.length === 0) return [];
+  return db
+    .select()
+    .from(master.masterMarathonLiveBonus)
+    .where(inArray(master.masterMarathonLiveBonus.Id, ids));
+}
+
+function nameMap(rows: { Id: string; Name: string | null }[]): Map<string, string> {
+  const names = new Map<string, string>();
+  for (const row of rows) {
+    if (row.Name !== null && row.Name !== '') names.set(String(row.Id), row.Name);
+  }
+  return names;
+}
+
+/**
+ * Display names of resources of one `ResourceType`, keyed by resource id.
+ * Types without a name-bearing master table return an empty map.
+ */
+export async function listResourceNames(type: number, ids: string[]): Promise<Map<string, string>> {
+  if (ids.length === 0) return new Map();
+  switch (type) {
+    case 1:
+      return nameMap(
+        await db
+          .select({ Id: master.masterItem.Id, Name: master.masterItem.Name })
+          .from(master.masterItem)
+          .where(inArray(master.masterItem.Id, ids)),
+      );
+    case 2:
+    case 24: // CardRarityExp: the resource id is a card id
+    case 25: // CardRarityExpLimitChange: the resource id is a card id
+      return nameMap(
+        await db
+          .select({ Id: master.masterCard.Id, Name: master.masterCard.Name })
+          .from(master.masterCard)
+          .where(inArray(master.masterCard.Id, ids)),
+      );
+    case 3:
+      return nameMap(
+        await db
+          .select({ Id: master.masterAccessory.Id, Name: master.masterAccessory.Name })
+          .from(master.masterAccessory)
+          .where(inArray(master.masterAccessory.Id, ids)),
+      );
+    case 4:
+      return nameMap(
+        await db
+          .select({ Id: master.masterCharacter.Id, Name: master.masterCharacter.Name })
+          .from(master.masterCharacter)
+          .where(inArray(master.masterCharacter.Id, ids)),
+      );
+    case 5:
+      return nameMap(
+        await db
+          .select({ Id: master.masterCostume.Id, Name: master.masterCostume.Name })
+          .from(master.masterCostume)
+          .where(inArray(master.masterCostume.Id, ids)),
+      );
+    case 7:
+      return nameMap(
+        await db
+          .select({ Id: master.masterPhotoAllInOne.Id, Name: master.masterPhotoAllInOne.Name })
+          .from(master.masterPhotoAllInOne)
+          .where(inArray(master.masterPhotoAllInOne.Id, ids)),
+      );
+    case 10:
+      return nameMap(
+        await db
+          .select({ Id: master.masterStory.Id, Name: master.masterStory.Name })
+          .from(master.masterStory)
+          .where(inArray(master.masterStory.Id, ids)),
+      );
+    case 12:
+      return nameMap(
+        await db
+          .select({ Id: master.masterMessage.Id, Name: master.masterMessage.Name })
+          .from(master.masterMessage)
+          .where(inArray(master.masterMessage.Id, ids)),
+      );
+    case 13:
+      return nameMap(
+        await db
+          .select({ Id: master.masterTelephone.Id, Name: master.masterTelephone.Name })
+          .from(master.masterTelephone)
+          .where(inArray(master.masterTelephone.Id, ids)),
+      );
+    case 17:
+      return nameMap(
+        await db
+          .select({ Id: master.masterEmblem.Id, Name: master.masterEmblem.Name })
+          .from(master.masterEmblem)
+          .where(inArray(master.masterEmblem.Id, ids)),
+      );
+    case 27:
+      return nameMap(
+        await db
+          .select({ Id: master.masterPhotoRecipe.Id, Name: master.masterPhotoRecipe.Name })
+          .from(master.masterPhotoRecipe)
+          .where(inArray(master.masterPhotoRecipe.Id, ids)),
+      );
+    case 28:
+      return nameMap(
+        await db
+          .select({ Id: master.masterHair.Id, Name: master.masterHair.Name })
+          .from(master.masterHair)
+          .where(inArray(master.masterHair.Id, ids)),
+      );
+    case 32:
+      return nameMap(
+        await db
+          .select({ Id: master.masterShowcaseToy.Id, Name: master.masterShowcaseToy.Name })
+          .from(master.masterShowcaseToy)
+          .where(inArray(master.masterShowcaseToy.Id, ids)),
+      );
+    case 33: // ShowcaseMusic: the stored id is a master_Music id
+      return nameMap(
+        await db
+          .select({ Id: master.masterMusic.Id, Name: master.masterMusic.Name })
+          .from(master.masterMusic)
+          .where(inArray(master.masterMusic.Id, ids)),
+      );
+    case 34:
+      return nameMap(
+        await db
+          .select({ Id: master.masterPhotoPose.Id, Name: master.masterPhotoPose.Name })
+          .from(master.masterPhotoPose)
+          .where(inArray(master.masterPhotoPose.Id, ids)),
+      );
+    default:
+      return new Map();
+  }
+}
+
+/**
+ * Every resource row of one `ResourceType` that has a name-bearing master
+ * table, used by the admin resource browser. Types without such a table
+ * return an empty list.
+ */
+export async function listResourcesByType(
+  type: number,
+): Promise<{ Id: string; Name: string | null }[]> {
+  switch (type) {
+    case 1:
+      return db
+        .select({ Id: master.masterItem.Id, Name: master.masterItem.Name })
+        .from(master.masterItem);
+    case 2:
+    case 24: // CardRarityExp: the resource id is a card id
+    case 25: // CardRarityExpLimitChange: the resource id is a card id
+      return db
+        .select({ Id: master.masterCard.Id, Name: master.masterCard.Name })
+        .from(master.masterCard);
+    case 3:
+      return db
+        .select({ Id: master.masterAccessory.Id, Name: master.masterAccessory.Name })
+        .from(master.masterAccessory);
+    case 4:
+      return db
+        .select({ Id: master.masterCharacter.Id, Name: master.masterCharacter.Name })
+        .from(master.masterCharacter);
+    case 5:
+      return db
+        .select({ Id: master.masterCostume.Id, Name: master.masterCostume.Name })
+        .from(master.masterCostume);
+    case 7:
+      return db
+        .select({ Id: master.masterPhotoAllInOne.Id, Name: master.masterPhotoAllInOne.Name })
+        .from(master.masterPhotoAllInOne);
+    case 10:
+      return db
+        .select({ Id: master.masterStory.Id, Name: master.masterStory.Name })
+        .from(master.masterStory);
+    case 12:
+      return db
+        .select({ Id: master.masterMessage.Id, Name: master.masterMessage.Name })
+        .from(master.masterMessage);
+    case 13:
+      return db
+        .select({ Id: master.masterTelephone.Id, Name: master.masterTelephone.Name })
+        .from(master.masterTelephone);
+    case 17:
+      return db
+        .select({ Id: master.masterEmblem.Id, Name: master.masterEmblem.Name })
+        .from(master.masterEmblem);
+    case 27:
+      return db
+        .select({ Id: master.masterPhotoRecipe.Id, Name: master.masterPhotoRecipe.Name })
+        .from(master.masterPhotoRecipe);
+    case 28:
+      return db
+        .select({ Id: master.masterHair.Id, Name: master.masterHair.Name })
+        .from(master.masterHair);
+    case 32:
+      return db
+        .select({ Id: master.masterShowcaseToy.Id, Name: master.masterShowcaseToy.Name })
+        .from(master.masterShowcaseToy);
+    case 33: // ShowcaseMusic: the stored id is a master_Music id
+      return db
+        .select({ Id: master.masterMusic.Id, Name: master.masterMusic.Name })
+        .from(master.masterMusic);
+    case 34:
+      return db
+        .select({ Id: master.masterPhotoPose.Id, Name: master.masterPhotoPose.Name })
+        .from(master.masterPhotoPose);
+    default:
+      return [];
+  }
 }
 
 export async function listCardLevels() {
@@ -1441,6 +1727,12 @@ export async function getFunctionLock(type: number) {
 
 export function listHierarchyDetailGrades() {
   return db.select().from(master.masterHierarchyDetailGrade);
+}
+
+/** Every main-story quest id, for callers that only need membership. */
+export async function listQuestIds(): Promise<Set<string>> {
+  const rows = await db.select({ Id: master.masterQuest.Id }).from(master.masterQuest);
+  return new Set(rows.map((row) => row.Id));
 }
 
 export function listHierarchyRewards() {
