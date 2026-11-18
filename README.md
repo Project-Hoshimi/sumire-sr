@@ -84,7 +84,9 @@ Never commit real account tokens, captures, or personal data into this repositor
 
 ### Marathon event (experimental)
 
-`SUMIRE_MARATHON_ID` turns on one authored Marathon event by naming a catalog at `packages/server/src/services/marathon/catalog/<id>.json`; `marathon-placeholder` is the checked-in fake. When set, `Home:Enter` advertises the event and `Marathon:Top` serves its config plus the seeded marathon master rows. It is experimental and was built without recorded traffic, so it is recorded as `stub`; leave the variable unset to keep the previous behaviour.
+Marathon events are event definitions in the database (`event_definitions`, `event_schedule`, `event_definition_history`). On startup the server imports each catalog file under `packages/server/src/services/marathon/catalog/` that is not already in the database, along with its optional `schedule` block (`startsAt`, `endsAt`, `exchangeEndsAt`, ISO times). An event is open while its schedule window is open. If the database is down, the catalog files and their schedule blocks are used instead. `marathon-placeholder` is the checked-in fake and has no schedule.
+
+`SUMIRE_MARATHON_ID` is a development override: the named event is served as open whatever its schedule. When an event is open, `Home:Enter` advertises it and `Marathon:Top` serves its config plus the seeded marathon master rows. The endpoints are recorded as `stub`.
 
 ### Invite links
 

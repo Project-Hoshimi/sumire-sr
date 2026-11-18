@@ -260,6 +260,13 @@
       "when": 1794467000000,
       "tag": "0038_marathon_master",
       "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1794727880840,
+      "tag": "0039_event_builder",
+      "breakpoints": true
     }
   ]
 }

@@ -8,6 +8,9 @@ import { activeMarathon, marathonConfig, marathonWindow } from './catalog.ts';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
+/** Unix ms after every checked-in authored schedule has closed. */
+const AFTER_ALL_SCHEDULES = Date.UTC(2026, 11, 6);
+
 /** Run `fn` with SUMIRE_MARATHON_ID temporarily set to `value`. */
 function withMarathonId<T>(value: string | undefined, fn: () => T): T {
   const previous = process.env.SUMIRE_MARATHON_ID;
@@ -21,11 +24,16 @@ function withMarathonId<T>(value: string | undefined, fn: () => T): T {
   }
 }
 
-test('activeMarathon is undefined when SUMIRE_MARATHON_ID is unset', () => {
+// Without the event registry, open events come from the catalog files'
+// authored schedules, so `activeMarathon` (which reads `Date.now`) is only
+// deterministic under a mocked clock.
+test('activeMarathon is undefined when SUMIRE_MARATHON_ID is unset', (t) => {
+  t.mock.timers.enable({ apis: ['Date'], now: AFTER_ALL_SCHEDULES });
   withMarathonId(undefined, () => assert.equal(activeMarathon(), undefined));
 });
 
-test('activeMarathon is undefined when SUMIRE_MARATHON_ID is empty', () => {
+test('activeMarathon is undefined when SUMIRE_MARATHON_ID is empty', (t) => {
+  t.mock.timers.enable({ apis: ['Date'], now: AFTER_ALL_SCHEDULES });
   withMarathonId('  ', () => assert.equal(activeMarathon(), undefined));
 });
 
@@ -36,7 +44,8 @@ test('activeMarathon resolves the placeholder catalog', () => {
   assert.ok(config.name.length > 0);
 });
 
-test('activeMarathon is undefined when the id names no catalog file', () => {
+test('activeMarathon is undefined when the id names no catalog file', (t) => {
+  t.mock.timers.enable({ apis: ['Date'], now: AFTER_ALL_SCHEDULES });
   withMarathonId('marathon-not-in-the-catalog', () => assert.equal(activeMarathon(), undefined));
 });
 

@@ -512,4 +512,51 @@ export const playerFriendLinks = pgTable(
   ],
 );
 
+/**
+ * Server-owned event definitions: a draft/published JSONB pair plus the
+ * published-version counter. `published` is null until the first publish.
+ */
+export const eventDefinitions = pgTable('event_definitions', {
+  id: text('id').primaryKey(),
+  kind: text('kind').notNull(),
+  title: text('title').notNull().default(''),
+  draft: jsonb('draft').notNull(),
+  published: jsonb('published'),
+  publishedVersion: integer('published_version').default(0).notNull(),
+  updatedBy: text('updated_by'),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
+/** Scheduled start/end windows for an event definition; multiple per event. */
+export const eventSchedule = pgTable(
+  'event_schedule',
+  {
+    id: serial('id').primaryKey(),
+    eventId: text('event_id')
+      .notNull()
+      .references(() => eventDefinitions.id, { onDelete: 'cascade' }),
+    startsAt: timestamp('starts_at', { withTimezone: true }).notNull(),
+    endsAt: timestamp('ends_at', { withTimezone: true }).notNull(),
+    exchangeEndsAt: timestamp('exchange_ends_at', { withTimezone: true }).notNull(),
+    enabled: boolean('enabled').default(true).notNull(),
+  },
+  (t) => [index('event_schedule_event_id_idx').on(t.eventId)],
+);
+
+/** Append-only history of published snapshots, one row per version. */
+export const eventDefinitionHistory = pgTable(
+  'event_definition_history',
+  {
+    id: serial('id').primaryKey(),
+    eventId: text('event_id')
+      .notNull()
+      .references(() => eventDefinitions.id, { onDelete: 'cascade' }),
+    version: integer('version').notNull(),
+    published: jsonb('published').notNull(),
+    publishedBy: text('published_by'),
+    publishedAt: timestamp('published_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [uniqueIndex('event_definition_history_event_version_idx').on(t.eventId, t.version)],
+);
+
 export * from './masterSchema.ts';

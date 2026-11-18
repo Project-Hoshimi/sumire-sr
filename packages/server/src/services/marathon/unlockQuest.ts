@@ -10,7 +10,7 @@ import { getMarathonQuest } from '../../master/index.ts';
 import { commonResponse } from '../activity.ts';
 import { compactUpdated, pushUpdated, withQuestPlayer } from '../quest.ts';
 import { getItemAmount, spendItem } from '../inventory.ts';
-import { activeMarathon } from './catalog.ts';
+import { marathonConfig, marathonWindowFor } from './catalog.ts';
 import { buildMarathonQuestInfo } from './questInfo.ts';
 import { loadMarathonState, saveMarathonState } from './state.ts';
 import { marathonQuestAccess } from './unlock.ts';
@@ -32,14 +32,15 @@ register(
     const now = Date.now();
     return withQuestPlayer(ctx, RPC, async (playerId) => {
       const payload = await withPlayerTx(playerId, async (tx) => {
-        const config = activeMarathon();
-        if (!config) throw new Error(`${RPC}: no marathon is active`);
-
         const questId = s(req.MarathonQuestId);
         if (questId === '') throw new Error(`${RPC}: marathonQuestId is required`);
         const quest = await getMarathonQuest(questId);
         if (!quest) throw new Error(`${RPC}: marathon quest not found: ${questId}`);
-        if (s(quest.MarathonId) !== config.id) {
+        const marathonId = s(quest.MarathonId);
+        const config = marathonId === '' ? undefined : marathonConfig(marathonId);
+        if (!config) throw new Error(`${RPC}: no marathon is active`);
+        const window = marathonWindowFor(marathonId, now);
+        if (!window || !(now < window.endTime)) {
           throw new Error(`${RPC}: marathon quest ${questId} is not in the active marathon`);
         }
 

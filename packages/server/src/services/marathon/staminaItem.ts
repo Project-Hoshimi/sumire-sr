@@ -11,7 +11,7 @@ import { getItem } from '../../master/index.ts';
 import { commonResponse } from '../activity.ts';
 import { compactUpdated, pushUpdated, withQuestPlayer } from '../quest.ts';
 import { getItemAmount, spendItem } from '../inventory.ts';
-import { activeMarathon } from './catalog.ts';
+import { marathonConfig, marathonWindowFor } from './catalog.ts';
 import { buildUserMarathonInfo } from './index.ts';
 import { AppRpcError, ERROR_ACTION, ERROR_CODE, GRPC_STATUS } from '../errors.ts';
 import {
@@ -41,11 +41,12 @@ register(
       let after = 0;
       let amount = 0;
       const payload = await withPlayerTx(playerId, async (tx) => {
-        const config = activeMarathon();
+        const marathonId = s(req.MarathonId);
+        const config = marathonId === '' ? undefined : marathonConfig(marathonId);
         if (!config) throw new Error(`${RPC}: no marathon is active`);
 
-        const marathonId = s(req.MarathonId);
-        if (marathonId === '' || marathonId !== config.id) {
+        const window = marathonWindowFor(marathonId, now);
+        if (!window || !(now < window.endTime)) {
           throw new Error(`${RPC}: marathon ${marathonId} is not the active marathon`);
         }
 
@@ -98,7 +99,7 @@ register(
       });
 
       ctx.fastifyReq.log.info(
-        { playerId, marathonId: activeMarathon()?.id, amount, before, after },
+        { playerId, marathonId: s(req.MarathonId), amount, before, after },
         'marathon quest stamina recovery item used',
       );
       return payload;
