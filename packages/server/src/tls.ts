@@ -1,17 +1,12 @@
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { networkInterfaces } from 'node:os';
 import { isIP } from 'node:net';
 import { join } from 'node:path';
 import { config } from './config.ts';
 
-const TLS_DIR = join(import.meta.dirname, '..', '..', '..', 'tls');
-const CA_KEY = join(TLS_DIR, 'ca.key');
-const CA_CRT = join(TLS_DIR, 'ca.crt');
-const KEY = join(TLS_DIR, 'api.key');
-const CSR = join(TLS_DIR, 'api.csr');
-const EXT = join(TLS_DIR, 'api.ext');
-const CRT = join(TLS_DIR, 'api.crt');
+export const DEFAULT_TLS_DIR = join(import.meta.dirname, '..', '..', '..', 'tls');
+const LEGACY_TLS_DIR = join(import.meta.dirname, '..', '..', 'tls');
 
 const GAME_DNS_SANS = [
   'api.game-idolypride.jp',
@@ -23,6 +18,9 @@ const GAME_DNS_SANS = [
   'firebasestorage.googleapis.com',
   'localhost',
 ];
+
+const VALID_HOSTNAME_RE =
+  /^[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$/;
 
 /** Locate the openssl binary, falling back to Git for Windows on win32. */
 export function findOpenSsl(): string {
@@ -45,18 +43,32 @@ function runOpenSsl(openssl: string, args: string[]): void {
     encoding: 'utf8',
     env: { ...process.env, MSYS_NO_PATHCONV: '1' },
   });
+  const errCode = (res.error as NodeJS.ErrnoException | undefined)?.code;
+  if (errCode === 'ENOENT') {
+    const hint =
+      process.platform === 'win32'
+        ? 'Install OpenSSL or Git for Windows (which bundles openssl.exe) and ensure it is on PATH.'
+        : 'Install openssl and ensure it is on PATH.';
+    throw new Error(`openssl binary not found (${openssl}): ${hint}`);
+  }
   if (res.status !== 0) {
     throw new Error(`openssl ${args[0]} failed (exit ${res.status}): ${res.stderr || res.error?.message || ''}`);
   }
 }
 
-function buildSanExtension(): string {
+function restrictPrivateKeyPermissions(path: string): void {
+  if (process.platform !== 'win32') {
+    chmodSync(path, 0o600);
+  }
+}
+
+export function buildSanExtension(host: string = config.host): string {
   const dns = new Set<string>(GAME_DNS_SANS);
   const ips = new Set<string>(['127.0.0.1']);
 
-  if (config.host && config.host !== '0.0.0.0' && config.host !== '::') {
-    if (isIP(config.host)) ips.add(config.host);
-    else dns.add(config.host);
+  if (host && host !== '0.0.0.0' && host !== '::') {
+    if (isIP(host)) ips.add(host);
+    else if (VALID_HOSTNAME_RE.test(host)) dns.add(host);
   }
 
   for (const list of Object.values(networkInterfaces())) {
@@ -80,45 +92,99 @@ function buildSanExtension(): string {
 }
 
 /**
- * Ensure the dev CA (`tls/ca.crt`) and leaf certificate (`tls/api.crt`) exist.
- * When missing, generates a private dev CA and signs the leaf certificate with
- * all game, master, Octo, and Firebase Auth emulation SANs so fresh clones work
- * across Linux, macOS, and Windows without manual openssl steps.
+ * Ensure the TLS key and certificate exist in `tlsDir` (default `<repo>/tls`).
+ * Never overwrites existing TLS files:
+ * - If `api.key` and `api.crt` already exist, returns them as-is.
+ * - If only one of `api.key`/`api.crt` exists, throws instead of overwriting.
+ * - If `api.key`/`api.crt` are absent and a complete CA (`ca.crt` + `ca.key`)
+ *   exists, signs a new leaf with the existing CA.
+ * - If only one of `ca.crt`/`ca.key` exists, throws instead of regenerating and
+ *   invalidating clients that already trust `ca.crt`.
+ * - If none of the four files exist, generates a private dev CA and signs a
+ *   leaf cert with game, master, Octo, Firebase Auth emulation, and LAN SANs.
  */
-export function ensureTlsCert(): { key: Buffer; cert: Buffer; allowHTTP1: boolean } {
-  if (existsSync(KEY) && existsSync(CRT) && existsSync(CA_CRT)) {
-    return { key: readFileSync(KEY), cert: readFileSync(CRT), allowHTTP1: true };
+export function ensureTlsCert(
+  tlsDir: string = DEFAULT_TLS_DIR,
+  host: string = config.host,
+): { key: Buffer; cert: Buffer; allowHTTP1: boolean } {
+  const caKey = join(tlsDir, 'ca.key');
+  const caCrt = join(tlsDir, 'ca.crt');
+  const key = join(tlsDir, 'api.key');
+  const csr = join(tlsDir, 'api.csr');
+  const ext = join(tlsDir, 'api.ext');
+  const crt = join(tlsDir, 'api.crt');
+
+  if (
+    tlsDir === DEFAULT_TLS_DIR &&
+    (existsSync(join(LEGACY_TLS_DIR, 'api.crt')) || existsSync(join(LEGACY_TLS_DIR, 'ca.crt')))
+  ) {
+    console.warn(
+      `[tls] WARNING: found legacy TLS files in ${LEGACY_TLS_DIR}. ` +
+        `sumire-sr now reads TLS certificates from ${DEFAULT_TLS_DIR}. ` +
+        `Move your existing files there to keep your current CA and avoid re-trusting on clients.`,
+    );
   }
-  mkdirSync(TLS_DIR, { recursive: true });
+
+  const hasKey = existsSync(key);
+  const hasCrt = existsSync(crt);
+  if (hasKey && hasCrt) {
+    return { key: readFileSync(key), cert: readFileSync(crt), allowHTTP1: true };
+  }
+  if (hasKey !== hasCrt) {
+    const present = hasKey ? key : crt;
+    const missing = hasKey ? crt : key;
+    throw new Error(
+      `incomplete TLS leaf pair in ${tlsDir}: found ${present} without ${missing}; ` +
+        `restore the missing file or remove the partial pair to regenerate`,
+    );
+  }
+
+  const hasCaKey = existsSync(caKey);
+  const hasCaCrt = existsSync(caCrt);
+  if (hasCaCrt && !hasCaKey) {
+    throw new Error(
+      `found ${caCrt} without ${caKey}; cannot sign a new server certificate without the CA private key ` +
+        `(refusing to overwrite existing CA)`,
+    );
+  }
+  if (!hasCaCrt && hasCaKey) {
+    throw new Error(
+      `found ${caKey} without ${caCrt}; refusing to overwrite existing CA private key`,
+    );
+  }
+
+  mkdirSync(tlsDir, { recursive: true });
   const openssl = findOpenSsl();
 
-  if (!existsSync(CA_KEY) || !existsSync(CA_CRT)) {
+  if (!hasCaCrt && !hasCaKey) {
     runOpenSsl(openssl, [
       'req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-sha256', '-days', '3650',
       '-subj', '/CN=Idoly Pride Dev CA',
-      '-keyout', CA_KEY,
-      '-out', CA_CRT,
+      '-keyout', caKey,
+      '-out', caCrt,
     ]);
+    restrictPrivateKeyPermissions(caKey);
   }
 
   runOpenSsl(openssl, [
     'req', '-newkey', 'rsa:2048', '-nodes',
     '-subj', '/CN=api.game-idolypride.jp',
-    '-keyout', KEY,
-    '-out', CSR,
+    '-keyout', key,
+    '-out', csr,
   ]);
-  writeFileSync(EXT, buildSanExtension(), 'utf8');
+  restrictPrivateKeyPermissions(key);
+  writeFileSync(ext, buildSanExtension(host), 'utf8');
   runOpenSsl(openssl, [
     'x509', '-req',
-    '-in', CSR,
-    '-CA', CA_CRT,
-    '-CAkey', CA_KEY,
+    '-in', csr,
+    '-CA', caCrt,
+    '-CAkey', caKey,
     '-CAcreateserial',
-    '-out', CRT,
+    '-out', crt,
     '-days', '3650',
     '-sha256',
-    '-extfile', EXT,
+    '-extfile', ext,
   ]);
 
-  return { key: readFileSync(KEY), cert: readFileSync(CRT), allowHTTP1: true };
+  return { key: readFileSync(key), cert: readFileSync(crt), allowHTTP1: true };
 }

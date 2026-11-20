@@ -26,7 +26,7 @@ const generated = spawnSync(
     '-keyout', join(FIXTURE_DIR, 'ca.key'),
     '-out', CA_PATH,
   ],
-  { encoding: 'utf8' },
+  { encoding: 'utf8', env: { ...process.env, MSYS_NO_PATHCONV: '1' } },
 );
 assert.equal(generated.status, 0, `openssl could not create the test CA: ${generated.stderr}`);
 
@@ -156,7 +156,7 @@ test('buildSniCallback selects the public context only for its hostname', async 
       '-keyout', keyPath, '-out', certPath,
       '-days', '1', '-subj', '/CN=public.example.test',
     ],
-    { encoding: 'utf8' },
+    { encoding: 'utf8', env: { ...process.env, MSYS_NO_PATHCONV: '1' } },
   );
   assert.equal(gen.status, 0, gen.stderr);
 

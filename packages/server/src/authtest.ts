@@ -64,10 +64,9 @@ check('tampered token rejected', () => assert.equal(verifyToken(t.slice(0, -2) +
 const persistedToken = mintToken({ sub: 'acc-restart', seedId: 'seed-restart' });
 const fingerprintBefore = publicKeyFingerprint();
 check('key file created with mode 0600', () => {
-  const mode = statSync(config.jwtPrivateKeyPath).mode & 0o777;
-  if (process.platform === 'win32') {
-    assert.equal(mode & 0o600, 0o600);
-  } else {
+  if (process.platform !== 'win32') {
+    // Windows does not enforce POSIX permission bits via statSync().mode.
+    const mode = statSync(config.jwtPrivateKeyPath).mode & 0o777;
     assert.equal(mode, 0o600);
   }
   assert.match(readFileSync(config.jwtPrivateKeyPath, 'utf8'), /BEGIN PRIVATE KEY/);
