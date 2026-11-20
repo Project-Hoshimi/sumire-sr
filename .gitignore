@@ -4,6 +4,7 @@ packages/admin/dist/
 !.env.example
 
 keys/
+/tls/
 *.pem
 *.key
 

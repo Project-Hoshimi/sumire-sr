@@ -9,6 +9,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test, { type TestContext } from 'node:test';
 import { buildServer, buildSniCallback } from './server.ts';
+import { findOpenSsl } from './tls.ts';
+
+const OPENSSL = findOpenSsl();
 
 // A throwaway CA made per run: the repo's own tls/ directory is not exported,
 // and this test has to pass from a fresh public clone.
@@ -16,14 +19,14 @@ const FIXTURE_DIR = mkdtempSync(join(tmpdir(), 'sumire-ca-fixture-'));
 process.on('exit', () => rmSync(FIXTURE_DIR, { recursive: true, force: true }));
 const CA_PATH = join(FIXTURE_DIR, 'ca.crt');
 const generated = spawnSync(
-  'openssl',
+  OPENSSL,
   [
     'req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-sha256', '-days', '1',
     '-subj', '/CN=sumire-sr test CA',
     '-keyout', join(FIXTURE_DIR, 'ca.key'),
     '-out', CA_PATH,
   ],
-  { encoding: 'utf8' },
+  { encoding: 'utf8', env: { ...process.env, MSYS_NO_PATHCONV: '1' } },
 );
 assert.equal(generated.status, 0, `openssl could not create the test CA: ${generated.stderr}`);
 
@@ -119,7 +122,7 @@ test('fingerprint matches openssl x509 -fingerprint -sha256', async (t) => {
   const res = await app.inject({ method: 'GET', url: '/.well-known/sumire/server.json' });
   const body = res.json() as { caSha256: string; caSha256Short: string };
 
-  const out = spawnSync('openssl', ['x509', '-in', CA_PATH, '-noout', '-fingerprint', '-sha256'], {
+  const out = spawnSync(OPENSSL, ['x509', '-in', CA_PATH, '-noout', '-fingerprint', '-sha256'], {
     encoding: 'utf8',
   });
   assert.equal(out.status, 0, out.stderr);
@@ -147,13 +150,13 @@ test('buildSniCallback selects the public context only for its hostname', async 
   const certPath = join(dir, 'public.crt');
   const keyPath = join(dir, 'public.key');
   const gen = spawnSync(
-    'openssl',
+    OPENSSL,
     [
       'req', '-x509', '-newkey', 'rsa:2048', '-nodes',
       '-keyout', keyPath, '-out', certPath,
       '-days', '1', '-subj', '/CN=public.example.test',
     ],
-    { encoding: 'utf8' },
+    { encoding: 'utf8', env: { ...process.env, MSYS_NO_PATHCONV: '1' } },
   );
   assert.equal(gen.status, 0, gen.stderr);
 
