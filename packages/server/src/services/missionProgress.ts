@@ -32,6 +32,8 @@ export const MissionType = {
   AreaAllTowerQuestClearCountAchievement: 83,
   AreaSubTowerQuestClearCountAchievement: 84,
   ReliabilityAchievement: 49,
+  MarathonQuestClearCount: 1201,
+  MarathonQuestClearDifficulty: 1202,
 } as const;
 
 /** Solis `AdvanceUserMissions`: adds `amount` to matching active missions. */
@@ -75,11 +77,7 @@ async function updateUserMissions(
   let completed: string[] = [];
   for (const mission of active) {
     const master = masters.get(String(mission.MissionId));
-    if (!master || Number(master.MissionType) !== missionType) continue;
-    if (!missionTargetsMatch(stringList(master.TargetIds), targetIds)) continue;
-    const step = reach
-      ? reachMissionProgress(mission, master, amount, now)
-      : addMissionProgress(mission, master, amount, now);
+    const step = applyMissionProgress(mission, master, missionType, amount, reach, targetIds, now);
     if (!step.changed) continue;
     changed.set(String(mission.MissionId), mission);
     if (step.newlyCompleted) completed.push(String(mission.MissionId));
@@ -120,6 +118,28 @@ async function updateUserMissions(
   for (const row of rows) if (!row.__msg) row.__msg = USER_MISSION_MSG;
   if (rows.length > 0) await putElements(playerId, 'Missions', rows, exec);
   return rows;
+}
+
+/**
+ * Apply one mission type/amount to a single stored UserMission row. Pure: it
+ * mutates only `mission`. Shared by `updateUserMissions` and the unit tests.
+ */
+export function applyMissionProgress(
+  mission: Decoded,
+  master: Decoded | undefined,
+  missionType: number,
+  amount: number,
+  reach: boolean,
+  targetIds: string[],
+  now: number,
+): { newlyCompleted: boolean; changed: boolean } {
+  if (!master || Number(master.MissionType) !== missionType) return { newlyCompleted: false, changed: false };
+  if (!missionTargetsMatch(stringList(master.TargetIds), targetIds)) {
+    return { newlyCompleted: false, changed: false };
+  }
+  return reach
+    ? reachMissionProgress(mission, master, amount, now)
+    : addMissionProgress(mission, master, amount, now);
 }
 
 function reachMissionProgress(mission: Decoded, master: Decoded, value: number, now: number) {

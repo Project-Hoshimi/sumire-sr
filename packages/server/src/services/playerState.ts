@@ -397,18 +397,19 @@ async function deleteElements(
 /**
  * Replace a single deck (by `Number`) with the given name + positions. Positions
  * submitted for that deck are upserted; any previously stored position for the
- * same deck that is absent from the request is removed.
+ * same deck that is absent from the request is removed. Returns the removed
+ * `Position` values, ascending and de-duplicated.
  */
 export async function saveDeck(
   playerId: string,
   deck: { Number: number; Name: string },
   positions: Decoded[],
   exec: Executor = db,
-): Promise<void> {
+): Promise<number[]> {
   const specs = new Map(fieldSpecs().map((s) => [s.field, s]));
   const deckSpec = specs.get('Decks');
   const posSpec = specs.get('DeckPositions');
-  if (!deckSpec || !posSpec) return;
+  if (!deckSpec || !posSpec) return [];
 
   await upsertElements(
     playerId,
@@ -422,17 +423,19 @@ export async function saveDeck(
     .select()
     .from(playerEntities)
     .where(and(eq(playerEntities.playerId, playerId), eq(playerEntities.kind, 'DeckPositions')));
-  const stale = existing.filter((r) => {
+  const stale: { id: typeof existing[number]['id']; position: number }[] = [];
+  for (const r of existing) {
     const el = decodeElement(posSpec.shape, r.blob);
-    if (el.Number !== deck.Number) return false;
+    if (el.Number !== deck.Number) continue;
     const key = keyOf(posSpec, el);
-    return key === null || !submitted.has(key);
-  });
+    if (key === null || !submitted.has(key)) stale.push({ id: r.id, position: Number(el.Position ?? 0) });
+  }
   if (stale.length) {
     await exec.delete(playerEntities).where(inArray(playerEntities.id, stale.map((r) => r.id)));
   }
 
   await upsertElements(playerId, posSpec, positions, exec);
+  return [...new Set(stale.map((r) => r.position))].sort((a, b) => a - b);
 }
 
 /**
@@ -667,6 +670,13 @@ export function collectionElementMsg(field: string): string | null {
  */
 const JSON_SINGLETON_PREFIX = 'json:';
 
+/** Decode a JSON-singleton blob (`json:` + base64 JSON), or null for another encoding. */
+export function decodeJsonSingletonBlob(blob: string): Decoded | null {
+  if (!blob.startsWith(JSON_SINGLETON_PREFIX)) return null;
+  const raw = Buffer.from(blob.slice(JSON_SINGLETON_PREFIX.length), 'base64').toString('utf8');
+  return JSON.parse(raw) as Decoded;
+}
+
 async function readJsonSingleton(
   playerId: string,
   field: string,
@@ -678,10 +688,7 @@ async function readJsonSingleton(
     .where(and(eq(playerEntities.playerId, playerId), eq(playerEntities.kind, field)))
     .limit(1);
   if (!rows.length) return null;
-  const blob = rows[0].blob;
-  if (!blob.startsWith(JSON_SINGLETON_PREFIX)) return null;
-  const raw = Buffer.from(blob.slice(JSON_SINGLETON_PREFIX.length), 'base64').toString('utf8');
-  return JSON.parse(raw) as Decoded;
+  return decodeJsonSingletonBlob(rows[0].blob);
 }
 
 async function writeJsonSingleton(

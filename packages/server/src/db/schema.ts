@@ -10,6 +10,7 @@ import {
   uniqueIndex,
   index,
 } from 'drizzle-orm/pg-core';
+import type { NpcRosterCard } from '../live/data/npcRosters.ts';
 
 export const accounts = pgTable(
   'accounts',
@@ -510,6 +511,106 @@ export const playerFriendLinks = pgTable(
     uniqueIndex('player_friend_links_pair_idx').on(t.fromPlayerId, t.toPlayerId),
     index('player_friend_links_to_idx').on(t.toPlayerId),
   ],
+);
+
+/**
+ * Server-owned event definitions: a draft/published JSONB pair plus the
+ * published-version counter. `published` is null until the first publish.
+ */
+export const eventDefinitions = pgTable('event_definitions', {
+  id: text('id').primaryKey(),
+  kind: text('kind').notNull(),
+  title: text('title').notNull().default(''),
+  draft: jsonb('draft').notNull(),
+  published: jsonb('published'),
+  publishedVersion: integer('published_version').default(0).notNull(),
+  updatedBy: text('updated_by'),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
+/** Scheduled start/end windows for an event definition; multiple per event. */
+export const eventSchedule = pgTable(
+  'event_schedule',
+  {
+    id: serial('id').primaryKey(),
+    eventId: text('event_id')
+      .notNull()
+      .references(() => eventDefinitions.id, { onDelete: 'cascade' }),
+    startsAt: timestamp('starts_at', { withTimezone: true }).notNull(),
+    endsAt: timestamp('ends_at', { withTimezone: true }).notNull(),
+    exchangeEndsAt: timestamp('exchange_ends_at', { withTimezone: true }).notNull(),
+    enabled: boolean('enabled').default(true).notNull(),
+  },
+  (t) => [index('event_schedule_event_id_idx').on(t.eventId)],
+);
+
+/** Append-only history of published snapshots, one row per version. */
+export const eventDefinitionHistory = pgTable(
+  'event_definition_history',
+  {
+    id: serial('id').primaryKey(),
+    eventId: text('event_id')
+      .notNull()
+      .references(() => eventDefinitions.id, { onDelete: 'cascade' }),
+    version: integer('version').notNull(),
+    published: jsonb('published').notNull(),
+    publishedBy: text('published_by'),
+    publishedAt: timestamp('published_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [uniqueIndex('event_definition_history_event_version_idx').on(t.eventId, t.version)],
+);
+
+/**
+ * DB-backed versus-stage NPC rosters, keyed by the roster id (for main-story
+ * quests this is the quest id). The checked-in `live/data/npcRosters.ts`
+ * constant seeds this table on startup; runtime lookups go through the
+ * in-process roster cache.
+ */
+export const npcRostersTable = pgTable('npc_rosters', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  managerLevel: integer('manager_level').notNull(),
+  cards: jsonb('cards').$type<NpcRosterCard[]>().notNull(),
+  updatedBy: text('updated_by'),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
+/**
+ * Admin console accounts. Usernames are stored lowercased; only the scrypt
+ * password hash is kept. `role` is one of viewer|editor|publisher|owner.
+ */
+export const adminUsers = pgTable(
+  'admin_users',
+  {
+    id: text('id').primaryKey(),
+    username: text('username').notNull(),
+    passwordHash: text('password_hash').notNull(),
+    role: text('role').notNull(),
+    disabled: boolean('disabled').default(false).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    lastLoginAt: timestamp('last_login_at', { withTimezone: true }),
+  },
+  (t) => [uniqueIndex('admin_users_username_idx').on(t.username)],
+);
+
+/**
+ * Admin console sessions. The cookie token never reaches the database; only
+ * its SHA-256 hex digest is stored as the primary key. `expiresAt` is the
+ * absolute expiry (created + 12h); `lastSeenAt` drives the 2h idle timeout.
+ */
+export const adminSessions = pgTable(
+  'admin_sessions',
+  {
+    tokenHash: text('token_hash').primaryKey(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => adminUsers.id, { onDelete: 'cascade' }),
+    csrfToken: text('csrf_token').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    lastSeenAt: timestamp('last_seen_at', { withTimezone: true }).notNull(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  },
+  (t) => [index('admin_sessions_user_id_idx').on(t.userId)],
 );
 
 export * from './masterSchema.ts';

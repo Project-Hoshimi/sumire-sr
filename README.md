@@ -82,6 +82,34 @@ On an empty database with no game data the server boots and sandbox `Auth:Create
 
 Never commit real account tokens, captures, or personal data into this repository.
 
+### Marathon event (experimental)
+
+Marathon events are event definitions in the database (`event_definitions`, `event_schedule`, `event_definition_history`). On startup the server imports each catalog file under `packages/server/src/services/marathon/catalog/` that is not already in the database, along with its optional `schedule` block (`startsAt`, `endsAt`, `exchangeEndsAt`, ISO times). An event is open while its schedule window is open. If the database is down, the catalog files and their schedule blocks are used instead. `marathon-placeholder` is the checked-in fake and has no schedule.
+
+`SUMIRE_MARATHON_ID` is a development override: the named event is served as open whatever its schedule. When an event is open, `Home:Enter` advertises it and `Marathon:Top` serves its config plus the seeded marathon master rows. The endpoints are recorded as `stub`.
+
+### Admin console (event builder)
+
+The server serves an admin console at `/sumire/admin/` for editing marathon event drafts, schedules, stages, reward boxes and NPC rosters, previewing a publish (diff plus the impact on saved player state), publishing, and rolling back to an earlier version. It is built from `packages/admin` (Vite + React) and read from `packages/admin/dist` (override with `SUMIRE_ADMIN_UI_DIR`). Build it on every deploy, then restart the server:
+
+```sh
+npm run build -w @sumire-sr/admin
+```
+
+Accounts have the roles `viewer`, `editor`, `publisher` and `owner`; sessions use an HttpOnly cookie plus a CSRF header. Create the first owner once with the `SUMIRE_ADMIN_TOKEN` bearer token while no admin account exists:
+
+```sh
+curl -s -X POST https://sumire.example/sumire/admin/bootstrap \
+  -H "Authorization: Bearer $SUMIRE_ADMIN_TOKEN" -H 'Content-Type: application/json' \
+  -d '{"username":"owner","password":"<a long password>"}'
+```
+
+After that, the owner manages accounts in the console, or with `node src/tools/adminUser.ts create|reset|disable|enable|list` in `packages/server`.
+
+To show English names next to the Japanese ones, clone [ipr-translation-data-en](https://github.com/Project-Hoshimi/ipr-translation-data-en) and set `SUMIRE_TRANSLATION_DIR` to the checkout (the folder that contains `local-files/`). It is read once at startup; unset or wrong, the console shows Japanese names only. The game client never receives this data.
+
+When a publish, rollback or schedule change (or an event window moving to its next phase) alters what clients saw at login, the next RPC from an already logged-in client returns error 1003 with a return-to-title action so the client reloads the new event state. `SUMIRE_EVENT_RELOG=0` turns this off.
+
 ### Invite links
 
 `SUMIRE_REGISTRATION` sets who may get an account: `open` (default) lets new players sign in without a link, `invite` requires an invite link, and `closed` refuses invite pages with 403.

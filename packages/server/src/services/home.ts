@@ -18,6 +18,7 @@ import {
 } from './playerState.ts';
 import { register } from './handlers.ts';
 import { applyBirthdayToHomeEnter, applyBirthdayToHomeLogin, birthdayLoginFields } from './birthday.ts';
+import { applyActiveMarathonToHomeEnter } from './marathon/index.ts';
 import { withPlayerTx } from '../db/tx.ts';
 import { hasReceivableGift, postStarterGifts } from './gift.ts';
 import { accountOf, commonResponse, lessonHomeFields, playerForAccount, reconcileLessonState } from './activity.ts';
@@ -244,6 +245,7 @@ register('Home:Enter', async (ctx) => {
       if (pl) body.FriendAppliedCount = await countIncoming(pl.id);
       await dropSandboxToyGachas(body);
       if (pl) await applyBirthdayToHomeEnter(body, pl.id);
+      applyActiveMarathonToHomeEnter(body);
       applyNarrative(body, narrative, true);
       const w = new Writer();
       encodeMessage(HomeEnterResponse, body, w);
@@ -263,6 +265,7 @@ register('Home:Enter', async (ctx) => {
       LoveInfo: loveInfo,
     };
     if (pl) await applyBirthdayToHomeEnter(body, pl.id);
+    applyActiveMarathonToHomeEnter(body);
     applyNarrative(body, narrative, true);
     const w = new Writer();
     encodeMessage(HomeEnterResponse, body, w);
@@ -282,6 +285,7 @@ register('Home:Enter', async (ctx) => {
   if (pl) decoded.FriendAppliedCount = await countIncoming(pl.id);
   await dropSandboxToyGachas(decoded);
   if (pl) await applyBirthdayToHomeEnter(decoded, pl.id);
+  applyActiveMarathonToHomeEnter(decoded);
   applyNarrative(decoded, narrative, false);
   const w = new Writer();
   encodeMessage(HomeEnterResponse, decoded, w);

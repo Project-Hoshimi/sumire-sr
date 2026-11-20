@@ -4,8 +4,11 @@ import { endpoints } from '@sumire-sr/protocol/gen/endpoints.ts';
 import { decodeMessage, encodeMessage, msgRegistry, Reader, Writer } from '@sumire-sr/protocol/runtime/proto.ts';
 import type { Decoded } from '@sumire-sr/protocol/runtime/proto.ts';
 import { getHandler, handlerOwnsState, hasHandler, type RpcOutput } from './handlers.ts';
-import { AppRpcError, ERROR_ACTION, ERROR_CODE, NotImplementedError } from './errors.ts';
-import { config } from '../config.ts';
+import { AppRpcError, ERROR_ACTION, ERROR_CODE, EVENT_RELOG_MESSAGE, GRPC_STATUS, NotImplementedError } from './errors.ts';
+import { config, eventRelogEnabled } from '../config.ts';
+import { extractBearer } from '../auth/jwt.ts';
+import { clientStateFingerprint } from './events/clientState.ts';
+import { eventRelogAppliesTo, sessionFreshness } from './sessionFreshness.ts';
 import { isSandbox } from '../profile.ts';
 import { SANDBOX_BLOCKED_RPCS } from '../profiles/sandbox/blockedRpcs.ts';
 import { authenticate, isGuestAuth } from '../auth/authenticate.ts';
@@ -113,6 +116,29 @@ export async function dispatchRpc(name: string, plain: Buffer, req: FastifyReque
       ERROR_ACTION.TITLE,
       INVITE_ONLY_MESSAGE,
     );
+  }
+  if (eventRelogEnabled() && eventRelogAppliesTo(name) && auth.ok && !isGuestAuth(auth)) {
+    // Force a relog when the published event state changed since this token
+    // first called an RPC. The stamp is dropped on a mismatch so the client's
+    // next request (after logging in again) is allowed.
+    const token = extractBearer(
+      (req.headers['x-auth-token'] as string | undefined) ??
+        (req.headers.authorization as string | undefined),
+    );
+    if (token && sessionFreshness.check(token, clientStateFingerprint(new Date())) === 'changed') {
+      req.log?.info?.(
+        { rpc: name, userId: auth.claims?.sub },
+        'forced relog: event state changed',
+      );
+      // Same status Solis uses for its daily forced relog: OK with title
+      // headers and an empty body.
+      throw new AppRpcError(
+        ERROR_CODE.DATE_CHANGED,
+        ERROR_ACTION.TITLE,
+        EVENT_RELOG_MESSAGE,
+        GRPC_STATUS.OK,
+      );
+    }
   }
   const output: RpcOutput = await handler({
     name,

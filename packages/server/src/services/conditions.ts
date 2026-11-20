@@ -35,6 +35,7 @@ const SUPPORTED_SETTINGS = new Set([
   'FinishedMessage',
   'Reliability',
   'ObtainCharacter',
+  'ObtainCard',
   'ObtainEmblem',
   'TutorialStep',
   'ItemAmount',
@@ -57,6 +58,7 @@ export class ConditionEvaluator {
   private stories: Map<string, Decoded> | null = null;
   private messages: Map<string, Decoded> | null = null;
   private characters: Map<string, Decoded> | null = null;
+  private cards: Map<string, Decoded> | null = null;
   private emblems: Map<string, Decoded> | null = null;
   private tutorials: Map<string, Decoded> | null = null;
 
@@ -211,6 +213,12 @@ export class ConditionEvaluator {
       if (!obtainCharacter.CharacterId) return INDETERMINATE;
       if (!(await this.loadCharacters()).has(String(obtainCharacter.CharacterId))) merge(UNSATISFIED);
     }
+    const obtainCard = value('ObtainCard');
+    if (obtainCard) {
+      hasKnownField = true;
+      if (!obtainCard.CardId) return INDETERMINATE;
+      if (!(await this.loadCards()).has(String(obtainCard.CardId))) merge(UNSATISFIED);
+    }
     const obtainEmblem = value('ObtainEmblem');
     if (obtainEmblem) {
       hasKnownField = true;
@@ -312,6 +320,11 @@ export class ConditionEvaluator {
   private async loadCharacters() {
     this.characters ??= await this.keyed('Characters', 'CharacterId');
     return this.characters;
+  }
+
+  private async loadCards() {
+    this.cards ??= await this.keyed('Cards', 'CardId');
+    return this.cards;
   }
 
   private async loadEmblems() {

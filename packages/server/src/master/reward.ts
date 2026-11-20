@@ -100,6 +100,17 @@ function toSnake(s: string): string {
 
 export const ResourceTypeValue = NAME_TO_VALUE;
 
+const VALUE_TO_NAME: Record<number, string> = {};
+for (const [name, value] of Object.entries(NAME_TO_VALUE)) VALUE_TO_NAME[value] = name;
+
+/**
+ * Inverse of the inline-reference mapping: the snake_case type name
+ * `rd_auto` uses for a `ResourceType`, or null when the type is unknown.
+ */
+export function resourceTypeSnakeName(resourceType: number): string | null {
+  return VALUE_TO_NAME[resourceType] ?? null;
+}
+
 export interface ManagerExpResult {
   before: number;
   after: number;
@@ -179,15 +190,24 @@ export type ApplyResult = {
   grants: Grant[];
 };
 
+/**
+ * Parse the inline `rd_auto;<resourceTypeName>;<resourceId>;<amount>` form.
+ * Returns null when `ref` is not an inline reward reference, and [] when it is
+ * inline but names an unknown resource type (matching the historical resolver).
+ */
+export function parseInlineRewardRef(ref: string): Grant[] | null {
+  if (!ref.startsWith('rd_auto;')) return null;
+  const [, typeName, resourceId = '', amountRaw = '1'] = ref.split(';');
+  const resourceType = NAME_TO_VALUE[typeName];
+  if (!resourceType) return [];
+  return [{ resourceType, resourceId, amount: Number(amountRaw) || 0 }];
+}
+
 /** Parse a single reward reference into concrete grants (no DB for inline). */
 export async function parseRewardRef(ref: string): Promise<Grant[]> {
   if (!ref) return [];
-  if (ref.startsWith('rd_auto;')) {
-    const [, typeName, resourceId = '', amountRaw = '1'] = ref.split(';');
-    const resourceType = NAME_TO_VALUE[typeName];
-    if (!resourceType) return [];
-    return [{ resourceType, resourceId, amount: Number(amountRaw) || 0 }];
-  }
+  const inline = parseInlineRewardRef(ref);
+  if (inline !== null) return inline;
   const reward = await getReward(ref);
   const resources = (reward?.Resources as Decoded[] | null) ?? [];
   const out: Grant[] = [];

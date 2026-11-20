@@ -10,6 +10,7 @@ import { resolve } from 'node:path';
 
 export type MessageKey =
   | 'notImplemented'
+  | 'eventRelogRequired'
   | 'inviteOnlyLogin'
   | 'inviteOnlyBlocked'
   | 'invalidCredentials'
@@ -20,6 +21,7 @@ export type MessageKey =
 
 const MESSAGE_KEYS: MessageKey[] = [
   'notImplemented',
+  'eventRelogRequired',
   'inviteOnlyLogin',
   'inviteOnlyBlocked',
   'invalidCredentials',
