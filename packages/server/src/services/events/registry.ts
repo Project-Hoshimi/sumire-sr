@@ -29,6 +29,8 @@ import type {
 } from './store.ts';
 // Side-effect import: registers the marathon plugin with the event plugin registry.
 import '../marathon/plugin.ts';
+// Side-effect import: registers the moshikoi plugin (permanent, no schedule).
+import '../moshikoi/plugin.ts';
 
 /** A compiled event plus its authored kind. */
 interface CompiledEvent {

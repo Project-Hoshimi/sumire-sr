@@ -49,6 +49,17 @@ export async function listItems() {
   return db.select().from(master.masterItem);
 }
 
+/** Ids among `ids` that exist in `master_Item`; empty input needs no query. */
+export async function listExistingItemIds(ids: readonly string[]): Promise<string[]> {
+  const wanted = [...new Set(ids.filter((id) => id !== ''))];
+  if (wanted.length === 0) return [];
+  const rows = await db
+    .select({ Id: master.masterItem.Id })
+    .from(master.masterItem)
+    .where(inArray(master.masterItem.Id, wanted));
+  return rows.map((row) => String(row.Id ?? '')).filter((id) => id !== '');
+}
+
 export async function getReward(id: string) {
   const [row] = await db.select().from(master.masterReward).where(eq(master.masterReward.Id, id)).limit(1);
   return row ?? null;
@@ -648,6 +659,26 @@ export async function listEventStories() {
   return db.select().from(master.masterEventStory);
 }
 
+/** One `master_EventStory` row by its banner asset id (`event-<marathon id>`), or null. */
+export async function getEventStoryByAssetId(assetId: string) {
+  if (assetId === '') return null;
+  const [row] = await db
+    .select()
+    .from(master.masterEventStory)
+    .where(eq(master.masterEventStory.AssetId, assetId))
+    .limit(1);
+  return row ?? null;
+}
+
+export async function getEventMission(id: string) {
+  const [row] = await db
+    .select()
+    .from(master.masterEventMission)
+    .where(eq(master.masterEventMission.Id, id))
+    .limit(1);
+  return row ?? null;
+}
+
 export async function getExtraStory(id: string) {
   const [row] = await db
     .select()
@@ -992,6 +1023,25 @@ export async function getMarathonQuestDifficulty(marathonQuestId: string, diffic
         eq(master.masterMarathonQuestDifficulty.DifficultyNumber, difficultyNumber),
       ),
     )
+    .limit(1);
+  return row ?? null;
+}
+
+/**
+ * Raid quest id for a marathon: `RaidQuest.json` ids are the marathon id plus
+ * `-quest-raid` (e.g. `marathon-raid-23-0927` → `marathon-raid-23-0927-quest-raid`).
+ */
+export function raidQuestIdForMarathon(marathonId: string): string {
+  return `${marathonId}-quest-raid`;
+}
+
+/** The `master_RaidQuest` row for a marathon id, or null when it has no raid quest. */
+export async function getRaidQuestByMarathonId(marathonId: string) {
+  if (marathonId === '') return null;
+  const [row] = await db
+    .select()
+    .from(master.masterRaidQuest)
+    .where(eq(master.masterRaidQuest.Id, raidQuestIdForMarathon(marathonId)))
     .limit(1);
   return row ?? null;
 }

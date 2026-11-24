@@ -7,6 +7,8 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test, { beforeEach } from 'node:test';
 import {
+  compiledEvent,
+  deleteEvent,
   eventWindowAt,
   initEventRegistry,
   openEvents,
@@ -25,6 +27,18 @@ import {
   setCatalogForTests,
 } from '../marathon/catalog.ts';
 import { marathonPlugin, type MarathonConfig, type MarathonDraft } from '../marathon/plugin.ts';
+import {
+  catalogDrafts as moshikoiCatalogDrafts,
+  loveConfig,
+  loveRoutes,
+  MoshikoiError,
+  supportedLoveIds,
+} from '../moshikoi/catalog.ts';
+import {
+  moshikoiPlugin,
+  type MoshikoiDraft,
+  type MoshikoiRuntime,
+} from '../moshikoi/plugin.ts';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -503,4 +517,76 @@ test('before the registry loads, catalog file schedules supply the windows', () 
   } finally {
     setCatalogForTests(undefined);
   }
+});
+
+// Moshikoi (permanent, no schedule)
+
+const MOSHIKOI_ID = 'love-24-1114';
+
+function moshikoiDraft(id = MOSHIKOI_ID): MoshikoiDraft {
+  const draft = moshikoiCatalogDrafts().find((candidate) => candidate.id === id);
+  assert.ok(draft, `checked-in moshikoi draft ${id}`);
+  return draft;
+}
+
+function asMoshikoiDrafts(...drafts: MoshikoiDraft[]) {
+  return drafts.map((draft) => ({ kind: 'moshikoi', draft }));
+}
+
+test('importing a moshikoi draft compiles it with no schedule rows', async () => {
+  await initEventRegistry({ store, drafts: asMoshikoiDrafts(moshikoiDraft()) });
+  assert.equal(registryLoaded(), true);
+
+  const runtime = compiledEvent<MoshikoiRuntime>('moshikoi', MOSHIKOI_ID);
+  assert.ok(runtime, 'compiled runtime exists');
+  assert.equal(runtime.config.loveId, MOSHIKOI_ID);
+  assert.equal(moshikoiPlugin.lifecycle, 'permanent');
+  assert.equal(moshikoiPlugin.draftSchedule(moshikoiDraft()), undefined);
+
+  const rows = await store.listSchedule();
+  assert.deepEqual(
+    rows.filter((row) => row.eventId === MOSHIKOI_ID),
+    [],
+  );
+});
+
+test('catalog.ts serves supported ids and configs from the loaded registry', async () => {
+  await initEventRegistry({ store, drafts: asMoshikoiDrafts(moshikoiDraft()) });
+
+  // The file fallback lists six ids; the registry path lists exactly what is
+  // compiled, which proves the read comes from the registry.
+  assert.deepEqual(supportedLoveIds(), [MOSHIKOI_ID]);
+  const catalog = moshikoiDraft().catalog;
+  assert.equal(loveConfig(MOSHIKOI_ID).name, catalog.name);
+  assert.deepEqual(loveRoutes(MOSHIKOI_ID), moshikoiPlugin.compile(moshikoiDraft()).routes);
+});
+
+test('deleting a moshikoi definition makes loveConfig throw love-event-not-available', async () => {
+  await initEventRegistry({ store, drafts: asMoshikoiDrafts(moshikoiDraft()) });
+  await deleteEvent(MOSHIKOI_ID);
+  await reloadEventRegistry();
+
+  assert.deepEqual(supportedLoveIds(), []);
+  assert.throws(
+    () => loveConfig(MOSHIKOI_ID),
+    (error: unknown) =>
+      error instanceof MoshikoiError && error.code === 'love-event-not-available',
+  );
+});
+
+test('publishing an edited moshikoi route map is visible to loveRoutes without a restart', async () => {
+  await initEventRegistry({ store, drafts: asMoshikoiDrafts(moshikoiDraft()) });
+  const edited: MoshikoiDraft = structuredClone(moshikoiDraft());
+  const endings = edited.routes.endings as { id: string; name: string }[];
+  const first = endings[0];
+  assert.ok(first, 'the route map has an ending');
+  first.name = 'Edited ending';
+
+  await publishEventDefinition(MOSHIKOI_ID, { draft: edited });
+
+  assert.equal(loveRoutes(MOSHIKOI_ID).endings[0]?.name, 'Edited ending');
+  assert.deepEqual(
+    (await store.listSchedule()).filter((row) => row.eventId === MOSHIKOI_ID),
+    [],
+  );
 });

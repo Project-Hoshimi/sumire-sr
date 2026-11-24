@@ -800,7 +800,11 @@ const companyRankPoint =
   Number(outCompany.EnjoyPoint ?? 0) + Number(outCompany.TrustPoint ?? 0) + Number(outCompany.SalaryPoint ?? 0);
 check('User:Get reports the top office rank points (S+50)', companyRankPoint >= 360000, outCompany);
 const outHierarchy = (userGet.Hierarchy ?? {}) as Record<string, unknown>;
-check('User:Get reports the BIG4 Venus rank', outHierarchy.BestDetailGradeId === 'hie-001-001', outHierarchy);
+check(
+  'User:Get no longer fabricates a BIG4 Venus rank',
+  outHierarchy.BestDetailGradeId !== 'hie-001-001',
+  outHierarchy,
+);
 const outTutorials = (userGet.Tutorials ?? []) as Record<string, unknown>[];
 check(
   'User:Get includes the completed opening tutorial',
@@ -1007,6 +1011,17 @@ const homeEnter = await rpc('Home:Enter', token, {});
 const homeGachaIds = ((homeEnter.GachaInfos ?? []) as Record<string, unknown>[]).map((g) => String(g.Id));
 check('Home:Enter still lists gachas', homeGachaIds.length > 0, homeGachaIds.length);
 check('Home:Enter lists no showcase toy gacha', !homeGachaIds.includes(String(toyGacha?.Id)), homeGachaIds.filter((id) => id.startsWith('gacha-toy')));
+const homeHierarchy = (homeEnter.HierarchyNotiInfo ?? {}) as Record<string, unknown>;
+check(
+  'Home:Enter reports the sandbox BIG4 Venus grade',
+  homeHierarchy.CurrentDetailGradeId === 'hie-001-001',
+  homeHierarchy,
+);
+check(
+  'Home:Enter reports rank 1 for the sandbox BIG4 standing',
+  Number(homeHierarchy.CurrentRank ?? 0) === 1,
+  homeHierarchy,
+);
 
 // ---------------------------------------------------------------------------
 // Memorial gacha: sandbox-only banners draw ★5s from per-category pools at the

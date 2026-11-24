@@ -1425,7 +1425,7 @@ export async function prepareLiveInput(
   exec: Executor = db,
   options?: PrepareLiveInputOptions,
 ): Promise<Input> {
-  if (q === null || req === null || n(req.DeckNumber) <= 0) {
+  if (q === null || req === null || n(req.DeckNumber) < 0) {
     throw new LivePreconditionError('a quest and saved deck are required');
   }
   if (toArray(req.UserBuddyDeckPositions).length > 0) {

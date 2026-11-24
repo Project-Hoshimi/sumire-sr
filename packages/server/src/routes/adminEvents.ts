@@ -34,7 +34,7 @@ import {
   validateEventDraft,
   type EventScheduleInputRow,
 } from '../services/events/registry.ts';
-import { eventPlugin } from '../services/events/plugin.ts';
+import { eventPlugin, pluginLifecycle } from '../services/events/plugin.ts';
 import type { AdminStore } from '../services/admin/store.ts';
 import { isValidAdminId } from '../services/ids.ts';
 import { ensureTranslationsLoaded, textName } from '../services/translations.ts';
@@ -133,6 +133,7 @@ export const adminEventRoutes: FastifyPluginAsync<AdminEventRouteDeps> = async (
     await ensureTranslationsLoaded();
     return summaries.map((row) => ({
       ...row,
+      lifecycle: pluginLifecycle(row.kind),
       titleEn: textName(row.title) ?? null,
       updatedByName: nameFor(names, row.updatedBy),
     }));
@@ -151,6 +152,7 @@ export const adminEventRoutes: FastifyPluginAsync<AdminEventRouteDeps> = async (
     return {
       id: definition.id,
       kind: definition.kind,
+      lifecycle: pluginLifecycle(definition.kind),
       title: definition.title,
       titleEn: textName(definition.title) ?? null,
       draft: definition.draft,
@@ -383,6 +385,11 @@ export const adminEventRoutes: FastifyPluginAsync<AdminEventRouteDeps> = async (
 
   app.put('/sumire/admin/events/:id/schedule', { preHandler: publisher }, async (req, reply) => {
     const { id } = req.params as { id: string };
+    const detail = await eventDefinitionDetail(id);
+    if (!detail) return reply.code(404).send({ error: 'not found' });
+    if (pluginLifecycle(detail.definition.kind) === 'permanent') {
+      return reply.code(400).send({ error: 'permanent events have no schedule' });
+    }
     const body = readJsonBody(req.body);
     const schedules = body?.schedules;
     if (!Array.isArray(schedules)) {

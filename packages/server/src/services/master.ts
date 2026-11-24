@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { register } from './handlers.ts';
@@ -8,6 +9,47 @@ import type { Decoded } from '@sumire-sr/protocol/runtime/proto.ts';
 
 export const MASTER_BLOBS_DIR = path.join(DATA_DIR, 'phaseA2', 'blobs');
 const MANIFEST_PATH = path.join(DATA_DIR, 'phaseA2', 'out', 'manifest.json');
+
+/**
+ * Opt-in unknown-partition probe: `phaseA2/script/build_probe_raidquest.py`
+ * writes a `RaidQuest` blob + manifest-shaped entry here, and with
+ * `SUMIRE_MASTER_PROBE_RAIDQUEST=1` we advertise it as an extra MasterTagPack
+ * the client has no protobuf type for. Off (and not even read) by default.
+ */
+export const MASTER_PROBE_DIR = path.join(DATA_DIR, 'phaseA2', 'blobs_probe');
+const PROBE_RAIDQUEST_TYPE = 'RaidQuest';
+const PROBE_RAIDQUEST_ENTRY = path.join(MASTER_PROBE_DIR, `${PROBE_RAIDQUEST_TYPE}.json`);
+
+/** Manifest-shaped probe entry; `downloadUrl` is rewritten per response. */
+type ProbePack = {
+  type: string;
+  fileName: string;
+  fileSize: number;
+  cryptoKey: string;
+};
+
+/** Read per call so tests (and a restart) can toggle the probe in one process. */
+export function raidQuestProbeEnabled(): boolean {
+  return process.env.SUMIRE_MASTER_PROBE_RAIDQUEST === '1';
+}
+
+/** The probe pack, or null while the flag is off or the probe was never built. */
+export function loadRaidQuestProbe(): ProbePack | null {
+  if (!raidQuestProbeEnabled() || !fs.existsSync(PROBE_RAIDQUEST_ENTRY)) return null;
+  return JSON.parse(fs.readFileSync(PROBE_RAIDQUEST_ENTRY, 'utf8')) as ProbePack;
+}
+
+/** Version the client has not seen before, so it re-syncs the master on enable. */
+export function raidQuestProbeVersion(version: string): string {
+  return createHash('sha256').update(`${version}:probe-raidquest`).digest('hex');
+}
+
+/** Local blob path for `/master/RaidQuest/<file>`, or null when not serving it. */
+export function raidQuestProbeBlobPath(type: string, file: string): string | null {
+  const probe = loadRaidQuestProbe();
+  if (!probe || type !== probe.type || file !== probe.fileName) return null;
+  return path.join(MASTER_PROBE_DIR, probe.type);
+}
 
 type Partition = {
   type: string;
@@ -33,28 +75,49 @@ export function loadManifest(): Manifest {
  */
 register(
   'Master:Get',
-  async () => {
+  async (ctx) => {
     const m = loadManifest();
     // In sandbox, advertise the current title-screen variant as the master
     // version and as the TitleBackground partition. "FAQ" steps it.
     const variant = isSandbox() ? titleRotation.current(loadTitleVariants()) : null;
+    const baseVersion = variant ? titleMasterVersion(m.version, variant) : m.version;
+    const packs = m.partitions.map((p) => {
+      const title = p.type === 'TitleBackground' ? variant : null;
+      const fileName = title ? title.fileName : p.fileName;
+      return {
+        __msg: 'Solis.Common.Proto.Transaction.MasterTagPack',
+        Type: p.type,
+        FileName: fileName,
+        FileSize: title ? title.fileSize : p.fileSize,
+        CryptoKey: p.cryptoKey,
+        DownloadUrl: `${config.publicBaseUrl}/master/${p.type}/${fileName}`,
+      };
+    });
+    // Opt-in probe: one partition the client has no protobuf type for. Flag off
+    // means the response above is untouched, byte for byte.
+    const probe = loadRaidQuestProbe();
+    if (probe) {
+      ctx.fastifyReq.log.info(
+        { type: probe.type, fileName: probe.fileName, fileSize: probe.fileSize },
+        'master probe: advertising unknown partition',
+      );
+      packs.push({
+        __msg: 'Solis.Common.Proto.Transaction.MasterTagPack',
+        Type: probe.type,
+        FileName: probe.fileName,
+        FileSize: probe.fileSize,
+        CryptoKey: probe.cryptoKey,
+        DownloadUrl: `${config.publicBaseUrl}/master/${probe.type}/${probe.fileName}`,
+      });
+    }
     return {
       __msg: 'Solis.Common.Proto.Api.MasterGetResponse',
       MasterTag: {
         __msg: 'Solis.Common.Proto.Transaction.MasterTag',
-        Version: variant ? titleMasterVersion(m.version, variant) : m.version,
-        MasterTagPacks: m.partitions.map((p) => {
-          const title = p.type === 'TitleBackground' ? variant : null;
-          const fileName = title ? title.fileName : p.fileName;
-          return {
-            __msg: 'Solis.Common.Proto.Transaction.MasterTagPack',
-            Type: p.type,
-            FileName: fileName,
-            FileSize: title ? title.fileSize : p.fileSize,
-            CryptoKey: p.cryptoKey,
-            DownloadUrl: `${config.publicBaseUrl}/master/${p.type}/${fileName}`,
-          };
-        }),
+        // The probe changes the version so the client cannot keep a cached
+        // master that lacks the extra pack.
+        Version: probe ? raidQuestProbeVersion(baseVersion) : baseVersion,
+        MasterTagPacks: packs,
       },
     } as Decoded;
   },

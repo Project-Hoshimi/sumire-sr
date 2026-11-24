@@ -16,16 +16,35 @@
 // With `--decode` it instead reads `[{Id, data}]` and writes `[{Id, decoded}]`,
 // exactly like patch_staff_group.ts, for byte/decoded verification.
 //
+// Tables whose message has no `Id` field (their blob uses a composite primary
+// key, e.g. CardImage(CardId, DisplayType)) have nothing to fill `Id` with. With
+// `--key-cols <Col1,Col2>` those PascalCase fields are read from the converted
+// row and written as `keys` as well as joined into `Id`, in input order.
+//
 // Usage:
 //   node script/patch_ipr_rows.ts <Table> <in.json> <out.json>
 //   node script/patch_ipr_rows.ts <Table> <in.json> <out.json> --decode
+//   node script/patch_ipr_rows.ts <Table> <in.json> <out.json> --key-cols CardId,DisplayType
 import fs from 'node:fs';
 import { Reader, Writer, decodeMessage, encodeMessage, msgRegistry } from '../../fastify-api/runtime/proto.ts';
 import type { FieldShape, MessageShape } from '../../fastify-api/runtime/proto.ts';
 import '../../fastify-api/src/gen/registry.ts';
 
-const [table, inPath, outPath] = process.argv.slice(2);
-const decodeOnly = process.argv[5] === '--decode';
+const args = process.argv.slice(2);
+const flags = new Map<string, string>();
+const positional: string[] = [];
+for (let i = 0; i < args.length; i++) {
+  if (args[i].startsWith('--')) {
+    const next = args[i + 1];
+    flags.set(args[i], next !== undefined && !next.startsWith('--') ? args[++i] : '');
+  } else {
+    positional.push(args[i]);
+  }
+}
+const [table, inPath, outPath] = positional;
+const decodeOnly = flags.has('--decode');
+// `--key-cols` with an empty value means "unset" (use keyCols?.length).
+const keyCols = flags.get('--key-cols')?.split(',').filter(Boolean) ?? null;
 const msgName = `Solis.Common.Proto.Master.${table}`;
 const shape = msgRegistry.get(msgName);
 if (!shape) throw new Error(`${msgName} not registered`);
@@ -50,7 +69,7 @@ if (decodeOnly) {
   console.log(`decoded ${out.length} ${table} rows`);
 } else {
   const dropped = new Map<string, number>();
-  const out: { Id: string; data: string }[] = [];
+  const out: { Id: string; keys?: unknown[]; data: string }[] = [];
 
   function convertValue(f: FieldShape, value: any, path: string): any {
     if (value === null || value === undefined) return value;
@@ -107,6 +126,21 @@ if (decodeOnly) {
 
   for (const r of rows as any[]) {
     const converted = convertRow(shape, r, '');
+    if (keyCols?.length) {
+      const keys = keyCols.map(c => {
+        if (!(c in converted)) {
+          throw new Error(`${table}: row has no key column ${c}: ${JSON.stringify(r).slice(0, 120)}`);
+        }
+        return typeof converted[c] === 'bigint' ? converted[c].toString() : converted[c];
+      });
+      if (keys.some(k => k === '' || k === undefined || k === null)) {
+        throw new Error(`${table}: row has an empty key column: ${JSON.stringify(r).slice(0, 120)}`);
+      }
+      const w = new Writer();
+      encodeMessage(shape, converted, w);
+      out.push({ Id: keys.join('\u001f'), keys, data: Buffer.from(w.toBytes()).toString('base64') });
+      continue;
+    }
     if (typeof converted.Id !== 'string' || !converted.Id) {
       throw new Error(`${table}: row has no Id: ${JSON.stringify(r).slice(0, 120)}`);
     }
@@ -120,6 +154,6 @@ if (decodeOnly) {
     .map(([path, count]) => `${path} x${count}`);
   console.log(`${table}: dropped paths: ${summary.length ? summary.join(', ') : 'none'}`);
 
-  fs.writeFileSync(outPath, JSON.stringify(out));
+  fs.writeFileSync(outPath, JSON.stringify(out, replacer));
   console.log(`encoded ${out.length} ${table} rows`);
 }

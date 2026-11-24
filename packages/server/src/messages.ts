@@ -14,6 +14,7 @@ export type MessageKey =
   | 'inviteOnlyLogin'
   | 'inviteOnlyBlocked'
   | 'invalidCredentials'
+  | 'idOrPasswordIncorrect'
   | 'ownAccount'
   | 'rateLimited'
   | 'expiredToken'
@@ -25,6 +26,7 @@ const MESSAGE_KEYS: MessageKey[] = [
   'inviteOnlyLogin',
   'inviteOnlyBlocked',
   'invalidCredentials',
+  'idOrPasswordIncorrect',
   'ownAccount',
   'rateLimited',
   'expiredToken',

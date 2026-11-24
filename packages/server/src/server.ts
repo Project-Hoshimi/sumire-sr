@@ -17,14 +17,16 @@ import { registerInviteRoutes } from './routes/invites.ts';
 import { adminRoutes } from './routes/admin.ts';
 import { adminEventRoutes } from './routes/adminEvents.ts';
 import { adminRosterRoutes } from './routes/adminRosters.ts';
+import { adminRaceRoutes } from './routes/adminRace.ts';
 import { adminLookupRoutes } from './routes/adminLookup.ts';
 import { adminUiRoutes } from './routes/adminUi.ts';
 import { drizzleAdminStore } from './services/admin/store.drizzle.ts';
 import cookie from '@fastify/cookie';
 import { registerAssetMirror } from './assetMirror.ts';
 import { registerOctoStore } from './octoStore.ts'; // experimental, opt-in (SUMIRE_OCTO_DATABASE)
-import { MASTER_BLOBS_DIR } from './services/master.ts';
-import { catalogDrafts } from './services/marathon/catalog.ts';
+import { MASTER_BLOBS_DIR, raidQuestProbeBlobPath } from './services/master.ts';
+import { catalogDrafts as marathonCatalogDrafts } from './services/marathon/catalog.ts';
+import { catalogDrafts as moshikoiCatalogDrafts } from './services/moshikoi/catalog.ts';
 import { initEventRegistry, openEvents, registryLoaded, reloadEventRegistry } from './services/events/registry.ts';
 import { isSandbox } from './profile.ts';
 import { isMainModule } from './mainModule.ts';
@@ -392,6 +394,8 @@ export function buildServer(): FastifyInstance {
   // Event definition/schedule and NPC roster editors share the admin store.
   app.register(adminEventRoutes, { admin: { store: adminStore } });
   app.register(adminRosterRoutes, { admin: { store: adminStore } });
+  // Race live-ops: player board state, balances and ranking.
+  app.register(adminRaceRoutes, { admin: { store: adminStore } });
   // Read-only master-data lookups and the built admin console UI. The UI only
   // owns `/sumire/admin` (redirect), `/sumire/admin/` and `/sumire/admin/assets/*`,
   // so the JSON API routes above are never shadowed.
@@ -413,6 +417,11 @@ export function buildServer(): FastifyInstance {
     const variant = isSandbox() ? titleVariantBlobPath(type, file) : null;
     if (variant && existsSync(variant)) {
       return reply.header('content-type', 'application/octet-stream').send(readFileSync(variant));
+    }
+    // Opt-in probe partition (SUMIRE_MASTER_PROBE_RAIDQUEST=1); null otherwise.
+    const probe = raidQuestProbeBlobPath(type, file);
+    if (probe && existsSync(probe)) {
+      return reply.header('content-type', 'application/octet-stream').send(readFileSync(probe));
     }
     const p = join(MASTER_BLOBS_DIR, type);
     if (!existsSync(p)) {
@@ -487,7 +496,10 @@ export async function start() {
     });
     const { imported } = await Promise.race([
       initEventRegistry({
-        drafts: catalogDrafts().map((draft) => ({ kind: 'marathon', draft })),
+        drafts: [
+          ...marathonCatalogDrafts().map((draft) => ({ kind: 'marathon', draft })),
+          ...moshikoiCatalogDrafts().map((draft) => ({ kind: 'moshikoi', draft })),
+        ],
       }),
       timeout,
     ]);

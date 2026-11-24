@@ -69,7 +69,7 @@ start_server() {
 
   (
     cd "$API" &&
-      screen -dmS "$SESSION" /bin/bash -c "SUMIRE_PROFILE=$profile PORT=$PORT TLS=1 HTTP2=1 DEBUG_RPC=1 exec node src/server.ts >>../tools/emulator/idoly.server.log 2>&1"
+      screen -dmS "$SESSION" /bin/bash -c "SUMIRE_PROFILE=$profile ${SUMIRE_MASTER_PROBE_RAIDQUEST:+SUMIRE_MASTER_PROBE_RAIDQUEST=$SUMIRE_MASTER_PROBE_RAIDQUEST }PORT=$PORT TLS=1 HTTP2=1 DEBUG_RPC=1 exec node src/server.ts >>../tools/emulator/idoly.server.log 2>&1"
   )
 
   i=0

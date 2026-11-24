@@ -185,11 +185,14 @@ export function ResourceLookupPicker({
     };
   }, [open, kind, rewardTab, rewardType, rewardQuery]);
 
-  // Custom-reward resource browse, once a type is selected.
+  // Custom-reward resource browse, once a type is selected. Idless types have
+  // no name-table rows, so there is nothing to browse for them.
   useEffect(() => {
     if (!open || kind !== 'rewards' || rewardTab !== 'custom' || customType === '') {
       return;
     }
+    const type = types?.find((row) => row.resourceType === customType);
+    if (type?.idless === true) return;
     let cancelled = false;
     setCustomLoading(true);
     const timer = setTimeout(
@@ -220,7 +223,7 @@ export function ResourceLookupPicker({
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [open, kind, rewardTab, customType, customQuery]);
+  }, [open, kind, rewardTab, customType, customQuery, types]);
 
   // Live-bonus groups: an empty query is the browse mode (all groups, paged).
   useEffect(() => {
@@ -305,14 +308,19 @@ export function ResourceLookupPicker({
   };
 
   const selectedType = types?.find((type) => type.resourceType === customType);
+  const selectedIdless = selectedType?.idless === true;
   const amountValue = Number(customAmount);
   const amountValid = Number.isInteger(amountValue) && amountValue >= 1;
   const composedId =
     selectedType !== undefined &&
     selectedType.snakeName !== null &&
-    customResourceId !== '' &&
+    (selectedIdless || customResourceId !== '') &&
     amountValid
-      ? composeInlineRewardId(selectedType.snakeName, customResourceId, amountValue)
+      ? composeInlineRewardId(
+          selectedType.snakeName,
+          selectedIdless ? '' : customResourceId,
+          amountValue,
+        )
       : null;
 
   return (
@@ -471,51 +479,61 @@ export function ResourceLookupPicker({
                     ))}
                 </select>
               </label>
-              <input
-                type="search"
-                className="resource-browse-search"
-                aria-label={`${ariaLabel} resource search`}
-                placeholder="Search resources"
-                value={customQuery}
-                onChange={(event) => setCustomQuery(event.target.value)}
-              />
+              {selectedIdless ? null : (
+                <input
+                  type="search"
+                  className="resource-browse-search"
+                  aria-label={`${ariaLabel} resource search`}
+                  placeholder="Search resources"
+                  value={customQuery}
+                  onChange={(event) => setCustomQuery(event.target.value)}
+                />
+              )}
             </div>
-            <ul className="resource-browse-list" aria-label={`${ariaLabel} resources`}>
-              {resources.map((resource) => {
-                const name =
-                  firstNonEmpty(resource.nameEn, resource.name) ?? resource.resourceId;
-                const japanese =
-                  firstNonEmpty(resource.nameEn) === null
-                    ? null
-                    : firstNonEmpty(resource.name);
-                const selected = resource.resourceId === customResourceId;
-                return (
-                  <li key={resource.resourceId}>
-                    <button
-                      type="button"
-                      className={`resource-browse-row${selected ? ' resource-browse-row-selected' : ''}`}
-                      aria-pressed={selected}
-                      onClick={() => setCustomResourceId(resource.resourceId)}
-                    >
-                      <span className="resource-label">
-                        <span className="resource-name">{name}</span>
-                        {japanese === null ? null : (
-                          <span className="resource-name-jp">{japanese}</span>
-                        )}
-                      </span>
-                      <code className="resource-browse-id">{resource.resourceId}</code>
-                    </button>
-                  </li>
-                );
-              })}
-              {resources.length === 0 && !customLoading ? (
-                <li className="resource-muted">No matching resources</li>
-              ) : null}
-            </ul>
+            {selectedIdless ? (
+              <p className="resource-muted" role="note">
+                No item to pick — set the amount only.
+              </p>
+            ) : (
+              <ul className="resource-browse-list" aria-label={`${ariaLabel} resources`}>
+                {resources.map((resource) => {
+                  const name =
+                    firstNonEmpty(resource.nameEn, resource.name) ?? resource.resourceId;
+                  const japanese =
+                    firstNonEmpty(resource.nameEn) === null
+                      ? null
+                      : firstNonEmpty(resource.name);
+                  const selected = resource.resourceId === customResourceId;
+                  return (
+                    <li key={resource.resourceId}>
+                      <button
+                        type="button"
+                        className={`resource-browse-row${selected ? ' resource-browse-row-selected' : ''}`}
+                        aria-pressed={selected}
+                        onClick={() => setCustomResourceId(resource.resourceId)}
+                      >
+                        <span className="resource-label">
+                          <span className="resource-name">{name}</span>
+                          {japanese === null ? null : (
+                            <span className="resource-name-jp">{japanese}</span>
+                          )}
+                        </span>
+                        <code className="resource-browse-id">{resource.resourceId}</code>
+                      </button>
+                    </li>
+                  );
+                })}
+                {resources.length === 0 && !customLoading ? (
+                  <li className="resource-muted">No matching resources</li>
+                ) : null}
+              </ul>
+            )}
             <div className="resource-browse-footer">
-              <span className="resource-muted">
-                {resources.length} of {resourceTotal}
-              </span>
+              {selectedIdless ? null : (
+                <span className="resource-muted">
+                  {resources.length} of {resourceTotal}
+                </span>
+              )}
               <label className="resource-browse-filter">
                 Amount
                 <input
