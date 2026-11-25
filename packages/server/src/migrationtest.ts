@@ -73,15 +73,17 @@ async function expectAppError(
   code: number,
   message: string,
   fn: () => Promise<unknown>,
+  action?: string,
 ): Promise<void> {
   try {
     await fn();
     check(label, false, 'no error thrown');
   } catch (e: any) {
-    check(label, isAppRpcError(e) && e.code === code && e.message === message, {
-      code: e?.code,
-      message: e?.message,
-    });
+    check(
+      label,
+      isAppRpcError(e) && e.code === code && e.message === message && (action === undefined || e.action === action),
+      { code: e?.code, action: e?.action, message: e?.message },
+    );
   }
 }
 
@@ -89,7 +91,7 @@ const app = buildServer();
 const createdAccountIds: string[] = [];
 const createdInviteIds: number[] = [];
 
-async function rpcHttp(name: string, reqBytes: Buffer, token?: string) {
+async function rpcHttp(name: string, reqBytes: Buffer, token?: string, ip = '127.0.0.1') {
   const res = await app.inject({
     method: 'POST',
     url: '/api.' + name.replace(':', '/'),
@@ -97,6 +99,7 @@ async function rpcHttp(name: string, reqBytes: Buffer, token?: string) {
       'content-type': 'application/x-protobuf',
       ...(token ? { 'x-auth-token': token } : {}),
     },
+    remoteAddress: ip,
     payload: encrypt(reqBytes, Buffer.from('0000000000000000')),
   });
   return res;
@@ -138,6 +141,12 @@ process.env.SUMIRE_LANG = 'zz';
 check('unknown SUMIRE_LANG falls back to English', message('notImplemented') === 'This feature is not implemented yet.');
 if (previousLang === undefined) delete process.env.SUMIRE_LANG;
 else process.env.SUMIRE_LANG = previousLang;
+
+// Both an unknown user id and a wrong password answer with this exact text.
+check(
+  'message(idOrPasswordIncorrect) is the unified login failure text',
+  message('idOrPasswordIncorrect') === 'ID or Password incorrect',
+);
 
 // ---------------------------------------------------------------------------
 // DB-backed tests
@@ -183,11 +192,11 @@ if (dbReady) {
       encodeReq(endpoints.Migration.SetPassword.request, { Password: password }),
       fakeRequest(auth),
     );
-  const migrate = (userId: string, password: string, auth?: string) =>
+  const migrate = (userId: string, password: string, auth?: string, ip = '127.0.0.1') =>
     dispatchRpc(
       'Migration:MigratePassword',
       encodeReq(endpoints.Migration.MigratePassword.request, { UserId: userId, Password: password }),
-      fakeRequest(auth),
+      fakeRequest(auth, ip),
     );
 
   // Migration:List -----------------------------------------------------------
@@ -327,6 +336,65 @@ if (dbReady) {
     tokens.verifyCustomToken(executedB.Token)?.uid === acctB?.firebaseUid,
   );
 
+  // Unified id/password failure ---------------------------------------------
+  // An unknown public id and a known id with a wrong password must be
+  // indistinguishable to the client: same code, action and dialog text. Each
+  // check uses its own client ip so the failure counters stay isolated from
+  // the rate-limit section below.
+  const ID_OR_PASSWORD_INCORRECT = message('idOrPasswordIncorrect');
+  await expectAppError(
+    'MigratePassword with an unknown user id reports 3003/continue',
+    3003,
+    ID_OR_PASSWORD_INCORRECT,
+    () => migrate('MIG99999', 'password1', undefined, '203.0.113.11'),
+    'continue',
+  );
+  await expectAppError(
+    'MigratePassword with a known user id and a wrong password reports 3003/continue',
+    3003,
+    ID_OR_PASSWORD_INCORRECT,
+    () => migrate(seedIdA, 'wrongpass', undefined, '203.0.113.12'),
+    'continue',
+  );
+
+  // Same check one layer up: the HTTP response the client actually receives
+  // must be identical apart from x-server-time.
+  const unknownHttp = await rpcHttp(
+    'Migration:MigratePassword',
+    encodeReq(endpoints.Migration.MigratePassword.request, { UserId: 'MIG99998', Password: 'password1' }),
+    undefined,
+    '203.0.113.21',
+  );
+  const wrongPasswordHttp = await rpcHttp(
+    'Migration:MigratePassword',
+    encodeReq(endpoints.Migration.MigratePassword.request, { UserId: seedIdA, Password: 'wrongpass' }),
+    undefined,
+    '203.0.113.22',
+  );
+  const clientView = (res: any) => ({
+    status: res.statusCode,
+    code: res.headers['x-error-code'],
+    action: res.headers['x-error-action'],
+    grpcStatus: res.headers['grpc-status'],
+    grpcMessage: res.headers['grpc-message'],
+    messageBin: res.headers['x-error-message-bin'],
+    body: res.body,
+  });
+  check(
+    'unknown id and wrong password produce identical client responses',
+    JSON.stringify(clientView(unknownHttp)) === JSON.stringify(clientView(wrongPasswordHttp)),
+    { unknown: clientView(unknownHttp), wrongPassword: clientView(wrongPasswordHttp) },
+  );
+  check(
+    'the unified failure carries "ID or Password incorrect" as x-error-message-bin',
+    Buffer.from(String(wrongPasswordHttp.headers['x-error-message-bin']), 'base64').toString('utf8') ===
+      'ID or Password incorrect',
+  );
+  check(
+    'the unified failure keeps the dialog text out of the response body',
+    !unknownHttp.body.includes('ID or Password incorrect'),
+  );
+
   // Rate limiting ------------------------------------------------------------
   const acctIdC = randomUUID();
   const seedIdC = 'MIG00003';
@@ -348,15 +416,15 @@ if (dbReady) {
   check('wrong password answers with app error code 3003 in the header', wrongHttp.headers['x-error-code'] === '3003');
   check('wrong password answers with the continue action', wrongHttp.headers['x-error-action'] === 'continue');
   check(
-    'wrong password HTTP response keeps the credential message off the wire',
-    !wrongHttp.body.includes(message('invalidCredentials')),
+    'wrong password HTTP response keeps the dialog text off the wire',
+    !wrongHttp.body.includes(message('idOrPasswordIncorrect')),
   );
 
   for (let i = 0; i < 4; i += 1) {
     await expectAppError(
       `wrong password failure ${i + 2} reports 3003`,
       3003,
-      message('invalidCredentials'),
+      message('idOrPasswordIncorrect'),
       () => migrate(seedIdC, 'wrongpass'),
     );
   }

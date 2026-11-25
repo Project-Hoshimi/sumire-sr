@@ -92,9 +92,18 @@ export interface EventScheduleRow {
   enabled: boolean;
 }
 
+/**
+ * When an event is live: scheduled kinds own schedule rows, permanent kinds
+ * (e.g. `moshikoi` love events) are live as soon as they are published.
+ * Older servers omit the field; treat absent as `scheduled`.
+ */
+export type EventLifecycle = 'scheduled' | 'permanent';
+
 export interface EventSummary {
   id: string;
   kind: string;
+  /** Absent on older servers; treated as `scheduled`. */
+  lifecycle?: EventLifecycle;
   title: string;
   /** English title when a translation is available; null otherwise. */
   titleEn: string | null;
@@ -128,6 +137,8 @@ export interface EventHistoryVersion {
 export interface EventDetail {
   id: string;
   kind: string;
+  /** Absent on older servers; treated as `scheduled`. */
+  lifecycle?: EventLifecycle;
   title: string;
   /** English title when a translation is available; null otherwise. */
   titleEn: string | null;
@@ -316,6 +327,11 @@ export interface LookupRewardType {
   count: number;
   /** True when the server's `applyGrants` can deliver this type. */
   grantable: boolean;
+  /**
+   * True when the type is grantable but has no name-table rows, so there is no
+   * resource id to pick and the composed reference uses an empty id.
+   */
+  idless: boolean;
 }
 
 /** One browsable name-table row (`GET /lookup/resources`). */
@@ -331,4 +347,51 @@ export interface LookupResource {
 export interface LookupBrowsePage<T> {
   items: T[];
   total: number;
+}
+
+/** VENUS (type 3) panel details (`GET /lookup/race-board`). */
+export interface RaceBoardVenus {
+  questId: string;
+  questName: string | null;
+  /** Difficulty tier shown for the panel (from the draft). */
+  difficultyNumber: number;
+  difficultyLevel: number | null;
+  clearScore: number | null;
+  /** False when the race quest has no row for `difficultyNumber`. */
+  difficultyFound: boolean;
+}
+
+/** One race board panel, in `Number` order. */
+export interface RaceBoardPanel {
+  number: number;
+  /** `master_RacePanel.Type`: 1 empty, 2 reward, 3 VENUS, 4 story. */
+  type: number;
+  typeLabel: string;
+  requiredRacePointAmount: number;
+  /** Raw `RacePanelReward.RewardId` of a reward panel. */
+  rewardId: string | null;
+  /** Resolved reward contents of a reward panel. */
+  reward: LookupReward | null;
+  /** `EventStoryEpisode` of a story panel. */
+  storyEpisode: number | null;
+  /** Event story id of a story panel. */
+  storyId: string | null;
+  venus: RaceBoardVenus | null;
+}
+
+/** One area of the board, with panels and point total. */
+export interface RaceBoardArea {
+  /** Position in the draft's `areaIds` (0-based). */
+  index: number;
+  areaId: string;
+  panelCount: number;
+  totalRacePointCost: number;
+  panels: RaceBoardPanel[];
+}
+
+/** Read-only board preview of one race draft. */
+export interface RaceBoardPreview {
+  raceId: string;
+  eventStoryId: string | null;
+  areas: RaceBoardArea[];
 }

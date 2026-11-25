@@ -1,5 +1,6 @@
 import './env.ts';
 import { join, resolve } from 'node:path';
+import { tlsPaths } from './tlsPaths.ts';
 
 /**
  * Root of the data tree: the directory that holds `captures/`, `phaseA2/` and
@@ -48,14 +49,15 @@ export function hasJwtKeys(): boolean {
 
 /**
  * CA that signs the game leaf (`tls/api.crt`). Defaults to the repository
- * `tls/ca.crt`, resolved from this file just like `tls.ts` resolves the leaf;
- * `TLS_CA_CERT` overrides it (relative values resolve against the process cwd).
- * Read on every call so tests can point a server at a missing file.
+ * `tls/ca.crt`, resolved by `tlsPaths()` so the same source works from
+ * `fastify-api/` and from `packages/server/`; `TLS_CA_CERT` overrides it
+ * (relative values resolve against the process cwd). Read on every call so
+ * tests can point a server at a missing file.
  */
 export function tlsCaCertPath(): string {
   return process.env.TLS_CA_CERT
     ? resolve(process.env.TLS_CA_CERT)
-    : join(import.meta.dirname, '..', '..', '..', 'tls', 'ca.crt');
+    : join(tlsPaths().tlsDir, 'ca.crt');
 }
 
 /**

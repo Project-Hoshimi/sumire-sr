@@ -1136,7 +1136,16 @@ if (ownedBefore) {
   const bloomAfter = Number(
     (await userGet()).Items?.find((i: any) => i.ItemId === 'item-card_limit_break')?.Amount ?? 0,
   );
-  check('Bloom Pt on an unowned card credits Bloom Pieces', bloomAfter === bloomBefore + 100);
+  const bloomCard = (await userGet()).Cards?.find((c: any) => c.CardId === bloomCardId);
+  check('Bloom Pt on an unowned card acquires it', !!bloomCard);
+  check(
+    'Bloom Pt on an unowned card is applied to the new card',
+    Number(bloomCard?.RarityTotalExp ?? 0) === Number(bloomApplied.afterExp),
+  );
+  check(
+    'Bloom Pt on an unowned card does not credit Bloom Pieces',
+    bloomAfter === bloomBefore,
+  );
 }
 
 // --- Duplicate conversion: medal + dedicated 開花Pt lookups ---
@@ -2531,8 +2540,8 @@ const [musicBefore] = await db
   .where(eq(masterPhotoQuestMusic.Id, SHOOT_MUSIC));
 const patchStage = (view: string, unlock: string) =>
   db.update(masterPhotoQuestStage).set({ ViewConditionId: view, UnlockConditionId: unlock }).where(eq(masterPhotoQuestStage.Id, SHOOT_STAGE));
-const patchMusic = (view: string, unlock: string) =>
-  db.update(masterPhotoQuestMusic).set({ ViewConditionId: view, UnlockConditionId: unlock }).where(eq(masterPhotoQuestMusic.Id, SHOOT_MUSIC));
+const patchMusic = (view: string, unlock: string, id = SHOOT_MUSIC) =>
+  db.update(masterPhotoQuestMusic).set({ ViewConditionId: view, UnlockConditionId: unlock }).where(eq(masterPhotoQuestMusic.Id, id));
 
 await patchStage(hiddenConditionId, '');
 const hiddenList = await listShooting();
@@ -2560,6 +2569,37 @@ const chkShoot = await callRpc('Photo:CheckShooting', 'Solis.Common.Proto.Api.Ph
   HairIds: ['hair-smr-schl-00'],
 });
 check('Photo:CheckShooting returns CommonResponse', !!chkShoot.CommonResponse);
+
+// MV musics (music-mv-*) carry their own staging: the client omits PhotoStageId.
+const MV_MUSIC = 'music-mv-022';
+const [mvMusicBefore] = await db
+  .select({ ViewConditionId: masterPhotoQuestMusic.ViewConditionId, UnlockConditionId: masterPhotoQuestMusic.UnlockConditionId })
+  .from(masterPhotoQuestMusic)
+  .where(eq(masterPhotoQuestMusic.Id, MV_MUSIC));
+await patchMusic('', '', MV_MUSIC);
+const chkMvShoot = await callRpc('Photo:CheckShooting', 'Solis.Common.Proto.Api.PhotoCheckShootingRequest', {
+  ActionType: 3,
+  PhotoMusicId: MV_MUSIC,
+  CharacterIds: ['char-smr'],
+  CostumeIds: ['cos-smr-schl-00'],
+  HairIds: ['hair-smr-schl-00'],
+});
+check('Photo:CheckShooting accepts an MV music without a stage', !!chkMvShoot.CommonResponse);
+
+let rejectedNonMvWithoutStage = false;
+try {
+  await callRpc('Photo:CheckShooting', 'Solis.Common.Proto.Api.PhotoCheckShootingRequest', {
+    ActionType: 3,
+    PhotoMusicId: SHOOT_MUSIC,
+    CharacterIds: ['char-smr'],
+    CostumeIds: ['cos-smr-schl-00'],
+    HairIds: ['hair-smr-schl-00'],
+  });
+} catch {
+  rejectedNonMvWithoutStage = true;
+}
+check('Photo:CheckShooting still requires a stage for non-MV musics', rejectedNonMvWithoutStage);
+await patchMusic(mvMusicBefore?.ViewConditionId ?? '', mvMusicBefore?.UnlockConditionId ?? '', MV_MUSIC);
 
 // Shootings must use one of the user's reserved image IDs (Solis NextPhotoImageIds).
 const reservedImageId = async (): Promise<string> =>

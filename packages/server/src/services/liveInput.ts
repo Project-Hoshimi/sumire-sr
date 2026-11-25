@@ -1,3 +1,7 @@
+// Portions of this file are derived from solis-server
+// (https://github.com/vertesan/solis-server), licensed under AGPL-3.0,
+// and were modified for sumire-sr. See NOTICE.
+
 // Port of the DB-facing live input preparation from Solis
 // `internal/server/rpc/servers/internal/viber/live.go` (+ `live_music.go`).
 //
@@ -1425,7 +1429,7 @@ export async function prepareLiveInput(
   exec: Executor = db,
   options?: PrepareLiveInputOptions,
 ): Promise<Input> {
-  if (q === null || req === null || n(req.DeckNumber) <= 0) {
+  if (q === null || req === null || n(req.DeckNumber) < 0) {
     throw new LivePreconditionError('a quest and saved deck are required');
   }
   if (toArray(req.UserBuddyDeckPositions).length > 0) {

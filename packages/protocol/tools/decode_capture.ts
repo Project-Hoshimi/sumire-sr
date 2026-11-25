@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { gunzipSync } from 'node:zlib';
 import { decodeMessage, Reader, msgRegistry } from '../src/runtime/proto.ts';
 import '../src/gen/registry.ts';
+import { endpoints } from '../src/gen/endpoints.ts';
 
 const dir = process.argv[2];
 if (!dir) throw new Error('usage: decode_capture.ts <captureDir>');
@@ -12,6 +13,11 @@ const RE = /^(\d+)\.(req|resp)-plain\.([A-Za-z0-9]+)[:@]([A-Za-z0-9]+)\.bin$/;
 const P = 'Solis.Common.Proto.Api.';
 
 function shapeFor(svc: string, method: string, kind: 'req' | 'resp') {
+  const declared = endpoints[svc]?.[method]?.[kind === 'req' ? 'request' : 'response'];
+  if (declared) {
+    const shape = msgRegistry.get(declared) ?? (!declared.includes('.') ? msgRegistry.get(P + declared) : undefined);
+    if (shape) return shape;
+  }
   const suffix = kind === 'req' ? 'Request' : 'Response';
   const exact = msgRegistry.get(`${P}${svc}${method}${suffix}`);
   if (exact) return exact;

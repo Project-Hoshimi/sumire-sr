@@ -15,6 +15,8 @@ import type {
   LookupItem,
   LookupLiveBonusGroup,
   LookupReward,
+  RaceBoardPreview,
+  RosterSummary,
 } from '../types.ts';
 import { EventEditorPage } from './EventEditorPage.tsx';
 
@@ -849,5 +851,633 @@ describe('EventEditorPage', () => {
     expect(await screen.findByText('Event is live. Disable its schedule first.')).toBeTruthy();
     expect(screen.getByRole('alertdialog')).toBeTruthy();
     expect(window.location.hash).toBe(`#/events/${EVENT_ID}`);
+  });
+});
+
+describe('EventEditorPage permanent events', () => {
+  /** A moshikoi love event: permanent, so no schedule rows and no lifecycle dates. */
+  function permanentDetail(): EventDetail {
+    return {
+      ...detail(),
+      kind: 'moshikoi',
+      lifecycle: 'permanent',
+      schedule: [],
+    };
+  }
+
+  function stubPermanent(): void {
+    vi.mocked(get).mockImplementation(((path: string) => {
+      if (path === `/events/${EVENT_ID}`) return Promise.resolve(permanentDetail());
+      if (path.startsWith('/lookup/quests')) return Promise.resolve([]);
+      if (path === '/rosters') return Promise.resolve([]);
+      return Promise.reject(new Error(`unexpected GET ${path}`));
+    }) as never);
+  }
+
+  it('hides the schedule tab and date inputs and shows the permanent note', async () => {
+    stubPermanent();
+    render(<EventEditorPage id={EVENT_ID} user={user('publisher')} />);
+
+    expect(
+      await screen.findByText(
+        'Permanent event: no schedule. Publishing makes changes live in the Love menu.',
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByRole('tab', { name: 'Schedule' })).toBeNull();
+    expect(screen.getByRole('tab', { name: 'Settings' })).toBeTruthy();
+    expect(document.querySelector('input[type="datetime-local"]')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Save schedule' })).toBeNull();
+  });
+
+  it('saves the draft without issuing a schedule PUT', async () => {
+    stubPermanent();
+    const writer = userEvent.setup();
+    render(<EventEditorPage id={EVENT_ID} user={user('publisher')} />);
+
+    const name = (await screen.findByLabelText('Name')) as HTMLInputElement;
+    await writer.type(name, ' edited');
+    await writer.click(screen.getByRole('button', { name: 'Save draft' }));
+
+    await waitFor(() => expect(vi.mocked(put)).toHaveBeenCalledTimes(1));
+    expect(vi.mocked(put).mock.calls[0][0]).toBe(`/events/${EVENT_ID}/draft`);
+    expect(
+      vi.mocked(put).mock.calls.some(([path]) => String(path).endsWith('/schedule')),
+    ).toBe(false);
+  });
+});
+
+describe('EventEditorPage race events', () => {
+  const RACE_ROSTER: RosterSummary = {
+    id: 'qt-main-1-007-04',
+    name: 'QT main roster',
+    nameEn: null,
+    managerLevel: 1,
+    updatedBy: null,
+    updatedAt: '2026-01-01T00:00:00Z',
+    usageCount: 0,
+  };
+
+  const RACE_DRAFT = {
+    raceId: 'race-26-0226',
+    name: 'Race 26-0226',
+    assetId: 'event-race-26-0226',
+    bannerAssetId: 'img_banner_l_event-race-26-0226',
+    racePointItemId: 'item-race_point-26-0226',
+    raceMedalItemId: 'item-race_medal-26-0226',
+    raceLiveBonusResetItemId: 'item-race_reset-live-bonus-26-0226',
+    eventMissionId: 'event-race-26-0226',
+    eventStoryId: 'story-1',
+    areaIds: ['race-area-005-01', 'race-area-005-02'],
+    raceLiveBonusGroupId: 'race_live_bonus_group-001',
+    areaQuestIds: { pt: 'race-qt-26-0226-pt', medal: 'race-qt-26-0226-medal' },
+    livePanelDifficultyNumber: 1,
+    cardCoolTimeMinutes: 60,
+    requiredCardCoolTimeRacePointAmount: 100,
+    initialRacePointAmount: 3000,
+    rankGrades: [
+      {
+        id: 'race_rank_grade-bronze',
+        name: 'Bronze',
+        hierarchyPointFrom: 0,
+        topColorCode: '#C08A5A',
+        bottomColorCode: '#7A4E2A',
+      },
+      {
+        id: 'race_rank_grade-silver',
+        name: 'Silver',
+        hierarchyPointFrom: 50,
+        topColorCode: '#D8D8D8',
+        bottomColorCode: '#8C8C8C',
+      },
+    ],
+    activityLesson: {
+      racePointPerStepBase: 34,
+      racePointPerStepPerTier: 4.5,
+      raceMedalPerStepBase: 17,
+      raceMedalPerStepPerTier: 3.3,
+      maxHours: 36,
+    },
+    areaQuestReward: { racePointPerTier: 2000, raceMedalPerTier: 100 },
+    rivals: 4,
+    npcRosterId: 'qt-main-1-007-04',
+    npcRosterByQuest: {},
+  };
+
+  function raceDetail(draft: unknown = RACE_DRAFT, publishedVersion = 0): EventDetail {
+    return {
+      ...detail(draft),
+      kind: 'race',
+      published: publishedVersion > 0,
+      publishedVersion,
+      schema: {
+        fields: [
+          { path: 'raceId', type: 'string', label: 'Race id', readOnly: true },
+          { path: 'name', type: 'string', label: 'Name', readOnly: true },
+          { path: 'assetId', type: 'string', label: 'Asset id', readOnly: true },
+          { path: 'areaIds', type: 'array', label: 'Board areas', readOnly: true },
+          {
+            path: 'areaQuestIds.pt',
+            type: 'string',
+            label: 'Race point area quest',
+            readOnly: true,
+          },
+          { path: 'livePanelDifficultyNumber', type: 'number', label: 'Live panel difficulty' },
+          { path: 'cardCoolTimeMinutes', type: 'number', label: 'Card cool time (minutes)' },
+          {
+            path: 'requiredCardCoolTimeRacePointAmount',
+            type: 'number',
+            label: 'Card cool time reset cost',
+          },
+          { path: 'initialRacePointAmount', type: 'number', label: 'Starting race points' },
+          { path: 'rivals', type: 'number', label: 'Opponents shown (real players)' },
+          { path: 'npcRosterId', type: 'string', label: 'Versus NPC roster' },
+          { path: 'rankGrades', type: 'array', label: 'Rank grades' },
+          { path: 'activityLesson', type: 'object', label: 'Activity lesson' },
+          {
+            path: 'activityLesson.racePointPerStepBase',
+            type: 'number',
+            label: 'Race points per step (base)',
+          },
+          {
+            path: 'activityLesson.racePointPerStepPerTier',
+            type: 'number',
+            label: 'Race points per step per tier',
+          },
+          {
+            path: 'activityLesson.raceMedalPerStepBase',
+            type: 'number',
+            label: 'Race medals per step (base)',
+          },
+          {
+            path: 'activityLesson.raceMedalPerStepPerTier',
+            type: 'number',
+            label: 'Race medals per step per tier',
+          },
+          {
+            path: 'activityLesson.maxHours',
+            type: 'number',
+            label: 'Activity lesson cap (hours)',
+          },
+          { path: 'areaQuestReward', type: 'object', label: 'Area quest reward' },
+          {
+            path: 'areaQuestReward.racePointPerTier',
+            type: 'number',
+            label: 'Race points per tier',
+          },
+          {
+            path: 'areaQuestReward.raceMedalPerTier',
+            type: 'number',
+            label: 'Race medals per tier',
+          },
+        ],
+      },
+    };
+  }
+
+  function stubRace(draft: unknown = RACE_DRAFT, publishedVersion = 0): void {
+    vi.mocked(get).mockImplementation(((path: string) => {
+      if (path === `/events/${EVENT_ID}`) return Promise.resolve(raceDetail(draft, publishedVersion));
+      if (path.startsWith('/lookup/quests')) return Promise.resolve([]);
+      if (path === '/rosters') return Promise.resolve([RACE_ROSTER]);
+      return Promise.reject(new Error(`unexpected GET ${path}`));
+    }) as never);
+  }
+
+  it('links to the race players page once a version is published', async () => {
+    stubRace(RACE_DRAFT, 2);
+    render(<EventEditorPage id={EVENT_ID} user={user('editor')} />);
+
+    const link = await screen.findByRole('link', { name: 'Players (live ops)' });
+    expect(link.getAttribute('href')).toBe(`#/events/${encodeURIComponent(EVENT_ID)}/players`);
+  });
+
+  it('shows no players link while the race is unpublished', async () => {
+    stubRace();
+    render(<EventEditorPage id={EVENT_ID} user={user('editor')} />);
+
+    await screen.findByLabelText('Race id');
+    expect(screen.queryByRole('link', { name: 'Players (live ops)' })).toBeNull();
+  });
+
+  it('shows master-derived fields read-only and saves edited tuning', async () => {
+    stubRace();
+    render(<EventEditorPage id={EVENT_ID} user={user('editor')} />);
+
+    const raceId = (await screen.findByLabelText('Race id')) as HTMLInputElement;
+    expect(raceId.value).toBe('race-26-0226');
+    expect(raceId.readOnly).toBe(true);
+    expect((screen.getByLabelText('Name') as HTMLInputElement).readOnly).toBe(true);
+    expect((screen.getByLabelText('Board areas') as HTMLInputElement).value).toBe(
+      'race-area-005-01, race-area-005-02',
+    );
+
+    fireEvent.change(screen.getByLabelText('Card cool time (minutes)'), {
+      target: { value: '30' },
+    });
+    fireEvent.change(screen.getByLabelText('Race points per step (base)'), {
+      target: { value: '40' },
+    });
+    fireEvent.change(screen.getByLabelText('Race medals per tier'), {
+      target: { value: '150' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Save draft' }));
+
+    const saved = await lastSavedDraft();
+    expect(saved.cardCoolTimeMinutes).toBe(30);
+    expect(saved.activityLesson).toEqual({
+      racePointPerStepBase: 40,
+      racePointPerStepPerTier: 4.5,
+      raceMedalPerStepBase: 17,
+      raceMedalPerStepPerTier: 3.3,
+      maxHours: 36,
+    });
+    expect(saved.areaQuestReward).toEqual({ racePointPerTier: 2000, raceMedalPerTier: 150 });
+    // The nested edits did not replace the whole draft with dotted keys.
+    expect(saved['activityLesson.racePointPerStepBase']).toBeUndefined();
+  });
+
+  it('keeps the JSON tab in sync with the Settings form', async () => {
+    stubRace();
+    render(<EventEditorPage id={EVENT_ID} user={user('editor')} />);
+
+    fireEvent.change(await screen.findByLabelText('Card cool time (minutes)'), {
+      target: { value: '25' },
+    });
+    fireEvent.click(screen.getByRole('tab', { name: 'JSON' }));
+
+    const json = (await screen.findByLabelText('Draft JSON')) as HTMLTextAreaElement;
+    expect(json.value).toContain('"cardCoolTimeMinutes": 25');
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Settings' }));
+    expect((screen.getByLabelText('Card cool time (minutes)') as HTMLInputElement).value).toBe('25');
+  });
+
+  it('adds, moves and saves rank grade rows', async () => {
+    stubRace();
+    render(<EventEditorPage id={EVENT_ID} user={user('editor')} />);
+
+    expect(await screen.findAllByLabelText(/Grade \d+ id/)).toHaveLength(2);
+    fireEvent.click(screen.getByRole('button', { name: 'Add grade' }));
+    expect(screen.getAllByLabelText(/Grade \d+ id/)).toHaveLength(3);
+
+    fireEvent.change(screen.getByLabelText('Grade 3 hierarchy points from'), {
+      target: { value: '150' },
+    });
+    fireEvent.click(screen.getByLabelText('Move grade 3 up'));
+    fireEvent.click(screen.getByRole('button', { name: 'Save draft' }));
+
+    const saved = await lastSavedDraft();
+    const grades = saved.rankGrades as Array<{ hierarchyPointFrom: number; id: string }>;
+    expect(grades.map((grade) => grade.hierarchyPointFrom)).toEqual([0, 150, 50]);
+
+    fireEvent.click(screen.getByLabelText('Remove grade 2'));
+    fireEvent.click(screen.getByRole('button', { name: 'Save draft' }));
+    const afterRemove = (await lastSavedDraft()).rankGrades as Array<{ id: string }>;
+    expect(afterRemove.map((grade) => grade.id)).toEqual([
+      'race_rank_grade-bronze',
+      'race_rank_grade-silver',
+    ]);
+  });
+
+  it('shows the server rank-grade validation inline', async () => {
+    stubRace({
+      ...RACE_DRAFT,
+      rankGrades: [
+        ...RACE_DRAFT.rankGrades,
+        {
+          id: 'race_rank_grade-gold',
+          name: 'Gold',
+          hierarchyPointFrom: 0,
+          topColorCode: '#F4D35E',
+          bottomColorCode: '#B8860B',
+        },
+      ],
+    });
+    vi.mocked(put).mockResolvedValue({
+      saved: true,
+      validation: {
+        ok: false,
+        errors: [
+          {
+            path: 'rankGrades.2.hierarchyPointFrom',
+            severity: 'error',
+            message: 'must be greater than the previous grade (50)',
+          },
+        ],
+      },
+    } as never);
+    render(<EventEditorPage id={EVENT_ID} user={user('editor')} />);
+
+    fireEvent.change(await screen.findByLabelText('Card cool time (minutes)'), {
+      target: { value: '45' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Save draft' }));
+
+    expect(
+      (await screen.findAllByText('must be greater than the previous grade (50)')).length,
+    ).toBeGreaterThan(0);
+  });
+
+
+  const ALT_ROSTER: RosterSummary = {
+    ...RACE_ROSTER,
+    id: 'qt-alt-roster',
+    name: 'Alt roster',
+  };
+
+  const VENUS_QUEST_ID = 'race-qt-26-0226-panel-001-001';
+
+  const BOARD_PREVIEW: RaceBoardPreview = {
+    raceId: 'race-26-0226',
+    eventStoryId: 'story-1',
+    areas: [
+      {
+        index: 0,
+        areaId: 'race-area-005-01',
+        panelCount: 3,
+        totalRacePointCost: 3000,
+        panels: [
+          {
+            number: 1,
+            type: 4,
+            typeLabel: 'Story',
+            requiredRacePointAmount: 1000,
+            rewardId: null,
+            reward: null,
+            storyEpisode: 1,
+            storyId: 'story-1',
+            venus: null,
+          },
+          {
+            number: 2,
+            type: 2,
+            typeLabel: 'Reward',
+            requiredRacePointAmount: 1000,
+            rewardId: 'rd_auto;item;item-a;5',
+            reward: {
+              id: 'rd_auto;item;item-a;5',
+              found: true,
+              resources: [
+                {
+                  resourceType: 1,
+                  typeLabel: 'Item',
+                  resourceId: 'item-a',
+                  amount: 5,
+                  name: 'Item A',
+                  nameEn: 'Item A EN',
+                },
+              ],
+            },
+            storyEpisode: null,
+            storyId: null,
+            venus: null,
+          },
+          {
+            number: 3,
+            type: 3,
+            typeLabel: 'VENUS',
+            requiredRacePointAmount: 1000,
+            rewardId: null,
+            reward: null,
+            storyEpisode: null,
+            storyId: null,
+            venus: {
+              questId: VENUS_QUEST_ID,
+              questName: 'Panel duel 1',
+              difficultyNumber: 1,
+              difficultyLevel: 10,
+              clearScore: 120000,
+              difficultyFound: true,
+            },
+          },
+        ],
+      },
+      {
+        index: 1,
+        areaId: 'race-area-005-02',
+        panelCount: 1,
+        totalRacePointCost: 1000,
+        panels: [
+          {
+            number: 1,
+            type: 1,
+            typeLabel: 'Empty',
+            requiredRacePointAmount: 1000,
+            rewardId: null,
+            reward: null,
+            storyEpisode: null,
+            storyId: null,
+            venus: null,
+          },
+        ],
+      },
+    ],
+  };
+
+  /** `stubRace` plus the board preview and a configurable roster list. */
+  function stubRaceBoard(
+    draft: unknown = RACE_DRAFT,
+    options: { rosters?: RosterSummary[]; board?: RaceBoardPreview } = {},
+  ): void {
+    const rosters = options.rosters ?? [RACE_ROSTER];
+    const board = options.board ?? BOARD_PREVIEW;
+    vi.mocked(get).mockImplementation(((path: string) => {
+      if (path === `/events/${EVENT_ID}`) return Promise.resolve(raceDetail(draft));
+      if (path.startsWith('/lookup/quests')) return Promise.resolve([]);
+      if (path.startsWith('/lookup/race-board')) return Promise.resolve(board);
+      if (path.startsWith('/lookup/rewards?ids=')) {
+        const ids = decodeURIComponent(path.slice('/lookup/rewards?ids='.length)).split(',');
+        return Promise.resolve(
+          ids.map((id): LookupReward => ({
+            id,
+            found: true,
+            resources: [
+              {
+                resourceType: 1,
+                typeLabel: 'Item',
+                resourceId: `item-${id}`,
+                amount: 1,
+                name: `Name ${id}`,
+                nameEn: null,
+              },
+            ],
+          })),
+        );
+      }
+      if (path === '/rosters') return Promise.resolve(rosters);
+      return Promise.reject(new Error(`unexpected GET ${path}`));
+    }) as never);
+  }
+
+  async function openBoardTab(): Promise<void> {
+    render(<EventEditorPage id={EVENT_ID} user={user('editor')} />);
+    await screen.findByLabelText('Race id');
+    fireEvent.click(screen.getByRole('tab', { name: 'Board' }));
+  }
+
+  it('previews lesson rates per step, hour and max claim for tier 1 and 55', async () => {
+    stubRace();
+    render(<EventEditorPage id={EVENT_ID} user={user('editor')} />);
+
+    const table = await screen.findByTestId('lesson-preview');
+    const cells = (tier: string): string[] =>
+      within(table.querySelector(`tr[data-tier="${tier}"]`) as HTMLElement)
+        .getAllByRole('cell')
+        .map((cell) => cell.textContent ?? '');
+
+    expect(cells('1')).toEqual(['1', '34', '17', '12240', '6120', '440640', '220320']);
+    expect(cells('55')).toEqual([
+      '55',
+      '277',
+      '195',
+      '99720',
+      '70200',
+      '3589920',
+      '2527200',
+    ]);
+
+    // The preview follows live edits to the rates and to the tier input.
+    fireEvent.change(screen.getByLabelText('Race points per step (base)'), {
+      target: { value: '10' },
+    });
+    expect(cells('1')[1]).toBe('10');
+    fireEvent.change(screen.getByLabelText('Preview tier'), { target: { value: '55' } });
+    expect(cells('55')[1]).toBe('253');
+  });
+
+  it('renders the board preview areas and panel contents', async () => {
+    stubRaceBoard();
+    await openBoardTab();
+
+    expect(
+      await screen.findByText(/2 areas · 4 panels · 4000 race points total/),
+    ).toBeTruthy();
+    const requested = vi
+      .mocked(get)
+      .mock.calls.map(([path]) => String(path))
+      .find((path) => path.startsWith('/lookup/race-board'));
+    expect(requested).toContain('eventId=race-26-0226');
+    expect(requested).toContain('difficulty=1');
+    expect(requested).toContain('areas=race-area-005-01%2Crace-area-005-02');
+
+    expect(screen.getByText('race-area-005-01', { selector: 'code' })).toBeTruthy();
+    expect(screen.getByText('race-area-005-02', { selector: 'code' })).toBeTruthy();
+    expect(screen.getAllByText('Story').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Reward').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('VENUS').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Empty').length).toBeGreaterThan(0);
+
+    // Story panels show their episode, reward panels their resolved grants,
+    // VENUS panels their quest and ClearScore.
+    expect(screen.getByText('story-1', { selector: 'code' })).toBeTruthy();
+    expect(screen.getByText(/5 × Item A/)).toBeTruthy();
+    expect(screen.getByText(VENUS_QUEST_ID, { selector: 'code' })).toBeTruthy();
+    expect(screen.getByText(/ClearScore 120000 · difficulty 1/)).toBeTruthy();
+  });
+
+  it('writes a per-panel roster override into the draft', async () => {
+    stubRaceBoard(RACE_DRAFT, { rosters: [RACE_ROSTER, ALT_ROSTER] });
+    await openBoardTab();
+
+    const select = (await screen.findByLabelText(
+      `NPC roster for ${VENUS_QUEST_ID}`,
+    )) as HTMLSelectElement;
+    expect(select.value).toBe('');
+    expect(select.options[0]?.textContent).toBe('default (qt-main-1-007-04)');
+
+    fireEvent.change(select, { target: { value: 'qt-alt-roster' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save draft' }));
+
+    const saved = await lastSavedDraft();
+    expect(saved.npcRosterByQuest).toEqual({ [VENUS_QUEST_ID]: 'qt-alt-roster' });
+  });
+
+  it('removes a per-panel roster override when the default is selected', async () => {
+    stubRaceBoard(
+      { ...RACE_DRAFT, npcRosterByQuest: { [VENUS_QUEST_ID]: 'qt-alt-roster' } },
+      { rosters: [RACE_ROSTER, ALT_ROSTER] },
+    );
+    await openBoardTab();
+
+    const select = (await screen.findByLabelText(
+      `NPC roster for ${VENUS_QUEST_ID}`,
+    )) as HTMLSelectElement;
+    expect(select.value).toBe('qt-alt-roster');
+
+    fireEvent.change(select, { target: { value: '' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save draft' }));
+
+    const saved = await lastSavedDraft();
+    expect(saved.npcRosterByQuest).toEqual({});
+  });
+
+  it('marks reward panels as master and offers the shared reward picker', async () => {
+    stubRaceBoard();
+    await openBoardTab();
+
+    const edit = await screen.findByRole('button', {
+      name: 'Edit rewards for race-area-005-01 panel 2',
+    });
+    expect(screen.getByText('master')).toBeTruthy();
+    expect(screen.getByText(/5 × Item A/)).toBeTruthy();
+
+    fireEvent.click(edit);
+
+    // The modal reuses the marathon editor's picker, prefilled per reference.
+    expect(await screen.findByRole('dialog', { name: 'Panel rewards' })).toBeTruthy();
+    const input = screen.getByLabelText(
+      'Reward 1 for area race-area-005-01 panel 2',
+    ) as HTMLInputElement;
+    expect(input.value).toBe('rd_auto;item;item-a;5');
+    expect(screen.queryByRole('button', { name: 'Reset to master' })).toBeNull();
+  });
+
+  it('saves a panel reward override from the picker into the draft', async () => {
+    stubRaceBoard();
+    await openBoardTab();
+
+    fireEvent.click(
+      await screen.findByRole('button', { name: 'Edit rewards for race-area-005-01 panel 2' }),
+    );
+    const input = (await screen.findByLabelText(
+      'Reward 1 for area race-area-005-01 panel 2',
+    )) as HTMLInputElement;
+    fireEvent.change(input, { target: { value: 'rd_auto;item;item-b;9' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+    expect(await screen.findByText('edited')).toBeTruthy();
+    expect(screen.queryByRole('dialog', { name: 'Panel rewards' })).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Save draft' }));
+
+    const saved = await lastSavedDraft();
+    expect(saved.panelRewards).toEqual({
+      'race-area-005-01:2': ['rd_auto;item;item-b;9'],
+    });
+  });
+
+  it('removes a panel reward override with reset to master', async () => {
+    stubRaceBoard({
+      ...RACE_DRAFT,
+      panelRewards: { 'race-area-005-01:2': ['rd_auto;item;item-b;9'] },
+    });
+    await openBoardTab();
+
+    expect(await screen.findByText('edited')).toBeTruthy();
+    fireEvent.click(
+      await screen.findByRole('button', { name: 'Edit rewards for race-area-005-01 panel 2' }),
+    );
+    const input = (await screen.findByLabelText(
+      'Reward 1 for area race-area-005-01 panel 2',
+    )) as HTMLInputElement;
+    expect(input.value).toBe('rd_auto;item;item-b;9');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Reset to master' }));
+    expect(await screen.findByText('master')).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Save draft' }));
+
+    const saved = await lastSavedDraft();
+    expect(saved.panelRewards).toEqual({});
   });
 });

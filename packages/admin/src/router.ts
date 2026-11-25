@@ -4,6 +4,7 @@
  *
  * Routes:
  *   #/events          #/events/:id          #/events/:id/publish
+ *   #/events/:id/players                  (race live-ops)
  *   #/rosters         #/rosters/new         #/rosters/:id
  *   #/users           #/login
  */
@@ -13,6 +14,7 @@ export type Route =
   | { name: 'events' }
   | { name: 'event'; id: string }
   | { name: 'publish'; id: string }
+  | { name: 'racePlayers'; id: string }
   | { name: 'rosters' }
   | { name: 'rosterNew' }
   | { name: 'roster'; id: string }
@@ -50,6 +52,9 @@ export function parseHash(hash: string): Route {
     }
     if (head === 'events' && parts.length === 3 && parts[2] === 'publish') {
       return { name: 'publish', id: decode(parts[1] as string) };
+    }
+    if (head === 'events' && parts.length === 3 && parts[2] === 'players') {
+      return { name: 'racePlayers', id: decode(parts[1] as string) };
     }
   }
 

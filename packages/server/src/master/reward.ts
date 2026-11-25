@@ -3,9 +3,10 @@ import { db } from '../db/client.ts';
 import { type Executor } from '../db/tx.ts';
 import { getReward, getPhotoAllInOne, getManagerLevel, getMaxManagerLevel } from '../master/index.ts';
 import { getCard, getItemAmount, grantCard, grantItem } from '../services/inventory.ts';
-import { applyCardBloomPt } from '../services/cardBloom.ts';
+import { applyCardBloomPt, RESOURCE_BLOOM_PT, RESOURCE_RARITY_EXP } from '../services/cardBloom.ts';
 import { getCurrency, grantCurrency, type Currency } from '../services/currency.ts';
 import { getSingleton, listElements, putElements, putSingleton } from '../services/playerState.ts';
+import { grantHierarchyPoint } from '../services/hierarchy.ts';
 import { players } from '../db/schema.ts';
 import { eq } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
@@ -35,9 +36,9 @@ const USER_BALANCE_MSG = 'Solis.Common.Proto.Transaction.UserBalance';
 const USER_PHOTO_MSG = 'Solis.Common.Proto.Transaction.UserPhoto';
 const USER_PHOTO_ABILITY_MSG = 'Solis.Common.Proto.Transaction.UserPhotoAbility';
 
-// ResourceType 25 (`CardRarityExpLimitChange`) is a per-card 才能開花Pt with
-// real card semantics (auto-bloom, ★10 overflow → Bloom Pieces); the
-// implementation lives in `src/services/cardBloom.ts`.
+// ResourceType 24 (`CardRarityExp`) and 25 (`CardRarityExpLimitChange`) are
+// per-card rarity exp with real card semantics (auto-bloom, ★10 overflow →
+// Bloom Pieces); the implementation lives in `src/services/cardBloom.ts`.
 
 /**
  * Resource types that are "own/unlock" entries in a `User:Get` collection:
@@ -72,7 +73,10 @@ export const SUPPORTED_GRANT_TYPES: ReadonlySet<number> = new Set([
   16, // PaidJewel
   20, // GroupStoryPoint
   21, // PhotoGift (documented zero-delivery gap)
+  24, // CardRarityExp (contest / race panel per-card rarity exp)
   25, // CardBloomPt
+  22, // HierarchyFixedPoint
+  23, // HierarchyVariablePoint
   29, // ActivatePhotoShootingStoryTicket (documented zero-delivery gap)
 ]);
 
@@ -259,6 +263,7 @@ export async function applyGrants(
   const hairs: Decoded[] = [];
   let balance: Decoded | null = null;
   let user: Decoded | null = null;
+  let hierarchy: Decoded | null = null;
 
   for (const g of grants) {
     const coll = COLLECTION_GRANTS[g.resourceType];
@@ -318,6 +323,21 @@ export async function applyGrants(
         results.push(result(g, b, b + g.amount));
         break;
       }
+      case 22:
+      case 23: {
+        // VENUS fixed (22) / variable (23) points live on the UserHierarchy
+        // singleton; the grant also raises the best-total high-water mark and
+        // reconciles the grade notification in the same call.
+        const granted = await grantHierarchyPoint(
+          playerId,
+          g.resourceType === 22 ? 22 : 23,
+          g.amount,
+          exec,
+        );
+        hierarchy = granted.hierarchy;
+        results.push(result(g, granted.before, granted.after));
+        break;
+      }
       case 14: {
         const granted = await addManagerExp(playerId, g.amount, exec);
         user = granted.user;
@@ -343,11 +363,27 @@ export async function applyGrants(
         for (const r of spawned.results) results.push(r);
         break;
       }
+      case 24:
       case 25: {
-        const bloom = await applyCardBloomPt(playerId, g.resourceId, g.amount, exec);
+        // CardRarityExp (24, contest / race panel rewards) and
+        // CardRarityExpLimitChange (25, gacha bloom Pt) both accumulate on the
+        // owned card's `RarityTotalExp` with auto-bloom + ★10 overflow. Only
+        // the echoed `RewardResult.ResourceType` differs.
+        const bloom = await applyCardBloomPt(
+          playerId,
+          g.resourceId,
+          g.amount,
+          exec,
+          g.resourceType === 24 ? RESOURCE_RARITY_EXP : RESOURCE_BLOOM_PT,
+        );
         for (const r of bloom.results) results.push(r);
         for (const it of bloom.items) items.push(it);
         if (bloom.card) cards.push(bloom.card);
+        // An unowned reward card is acquired through the standard card-grant
+        // path, which may spawn its idol / default outfits / hairstyles.
+        characters.push(...bloom.characters);
+        costumes.push(...bloom.costumes);
+        hairs.push(...bloom.hairs);
         break;
       }
       case 7: {
@@ -408,6 +444,7 @@ export async function applyGrants(
   if (points.length) updated.Points = points;
   if (balance) updated.Balance = balance;
   if (user) updated.User = user;
+  if (hierarchy) updated.Hierarchy = hierarchy;
   if (cards.length) updated.Cards = cards;
   if (photos.length) updated.Photos = photos;
   if (characters.length) updated.Characters = characters;
@@ -425,6 +462,7 @@ export async function applyGrants(
     points.length ||
     balance ||
     user ||
+    hierarchy ||
     collections.size ||
     cards.length ||
     photos.length ||

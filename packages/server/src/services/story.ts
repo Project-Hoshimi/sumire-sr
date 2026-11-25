@@ -12,6 +12,7 @@ import {
 } from '../profiles/sandbox/story.ts';
 import { listElements, putElements } from './playerState.ts';
 import { reconcileNarrative } from './narrative.ts';
+import { recordRaceStoryPlayed } from './race/storyOverride.ts';
 import { getCard as getUserCard } from './inventory.ts';
 import { cardStoryIdsForLevel } from './cardStories.ts';
 import type { Decoded } from '@sumire-sr/protocol/runtime/proto.ts';
@@ -91,6 +92,9 @@ async function performRead(accountId: string, rpc: string, storyId: string): Pro
     const stories = await listElements(pl.id, 'Stories', tx);
     const existing = stories.find((s) => String(s.StoryId ?? '') === storyId);
     if (existing && Number(existing.StatusType ?? 0) === STORY_STATUS_READ) {
+      // A race re-run serves this row as Unread until the episode is read in
+      // the current run; the response below stays Read and no reward repeats.
+      await recordRaceStoryPlayed(pl.id, storyId, Date.now(), tx);
       return { updated: updatedData(['Stories', [existing]]), deleted: null, rewards: [] };
     }
 
@@ -109,6 +113,9 @@ async function performRead(accountId: string, rpc: string, storyId: string): Pro
     const applied = rewardId ? await applyRewardRefs(pl.id, [rewardId], tx) : null;
     const userStory = { __msg: USER_STORY_MSG, StoryId: storyId, StatusType: STORY_STATUS_READ } as Decoded;
     await putElements(pl.id, 'Stories', [userStory], tx);
+    // Event story episodes of an open race are also marked as played in this
+    // run's race state (same transaction; rewards were already claimed once).
+    await recordRaceStoryPlayed(pl.id, storyId, Date.now(), tx);
 
     const updated = applied?.updated ?? ({ __msg: UPDATED_DATA_MSG } as Decoded);
     updated.Stories = [userStory];

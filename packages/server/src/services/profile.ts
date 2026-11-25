@@ -4,12 +4,10 @@ import { db } from '../db/client.ts';
 import { withPlayerTx, type Executor } from '../db/tx.ts';
 import { players } from '../db/schema.ts';
 import { getSingleton, listElements, putSingleton } from './playerState.ts';
-import { getLowestHierarchyDetailGrade } from '../master/index.ts';
+import { loadHierarchyStanding } from './hierarchy.ts';
 import { type Decoded } from '@sumire-sr/protocol/runtime/proto.ts';
-import { isSandbox } from '../profile.ts';
 import { birthdayBadRequest, loadReconciledBirthday } from './birthday.ts';
 import { birthdayClock, isValidBirthDate, nextAdv, reminder } from './birthdayLogic.ts';
-import { SANDBOX_HIERARCHY_DETAIL_GRADE_ID, SANDBOX_HIERARCHY_RANK } from '../profiles/sandbox/hierarchy.ts';
 import { GRPC_STATUS, RpcError } from './errors.ts';
 import { friendIds, profileInfosFor, profileShowpieces } from './friendLinks.ts';
 
@@ -275,35 +273,26 @@ register(
 );
 
 /**
- * Hierarchy grade and rank shown on a profile. The player has no stored
- * grade/rank: report the lowest master detail grade and rank 0, or the fixed
- * sandbox grade and rank in the sandbox profile.
+ * Hierarchy grade and rank shown on a profile, computed from the player's
+ * VENUS points and the server-wide Diamond leaderboard.
  */
-async function currentHierarchy(rpc: string): Promise<{ gradeId: string; rank: number }> {
-  let gradeId = SANDBOX_HIERARCHY_DETAIL_GRADE_ID;
-  let rank = SANDBOX_HIERARCHY_RANK;
-  if (!isSandbox()) {
-    const grade = await getLowestHierarchyDetailGrade();
-    if (!grade) throw new Error(`${rpc}: no hierarchy detail grade master data`);
-    gradeId = String(grade.Id);
-    rank = 0;
-  }
-  return { gradeId, rank };
+async function currentHierarchy(playerId: string): Promise<{ gradeId: string; rank: number }> {
+  const standing = await loadHierarchyStanding(playerId);
+  return { gradeId: standing.detailGradeId, rank: standing.rank };
 }
 
 /**
  * `Profile:Top` — business card (profile) screen.
  *
- * The player has no stored hierarchy grade/rank, so report the lowest master
- * detail grade (where a fresh player starts) and rank 0. The sandbox shows
- * every player at BIG4 instead. `FriendProfiles` is the player's friend list.
+ * The hierarchy grade/rank come from the player's real VENUS standing.
+ * `FriendProfiles` is the player's friend list.
  */
 register(
   'Profile:Top',
   async (ctx) => {
     const accountId = accountOf(ctx);
     const me = await playerForAccount(accountId, 'Profile:Top');
-    const { gradeId, rank } = await currentHierarchy('Profile:Top');
+    const { gradeId, rank } = await currentHierarchy(me.id);
     return {
       __msg: '',
       HierarchyCurrentDetailGradeId: gradeId,
@@ -342,7 +331,7 @@ register(
     }
     const user = await loadUser(db, pl.id);
     const profile = await loadProfile(db, pl.id);
-    const { gradeId, rank } = await currentHierarchy('Profile:FindUser');
+    const { gradeId, rank } = await currentHierarchy(pl.id);
     const showpieces = await profileShowpieces(pl.id, user, profile);
     return {
       __msg: FIND_USER_RESPONSE_MSG,

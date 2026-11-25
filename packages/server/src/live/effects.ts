@@ -1,3 +1,7 @@
+// Portions of this file are derived from solis-server
+// (https://github.com/vertesan/solis-server), licensed under AGPL-3.0,
+// and were modified for sumire-sr. See NOTICE.
+
 // Ported from Solis internal/makino/live/effects.go.
 //
 // New effect families add one compiler rule and one executor; ordinary statuses

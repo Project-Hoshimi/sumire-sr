@@ -83,6 +83,7 @@ Handlers are registered at import time with `register('Service:Method', handler,
 | `npm run gen` | Regenerate `packages/protocol/src/gen/` from schema descriptors. |
 | `npm run docs:endpoints` | Regenerate `docs/ENDPOINTS.md` from schemas and registered handlers. |
 | `npm run -w packages/server dev` | Run the server with Node's watcher, no build step. |
+| `npm run -w packages/server octo -- <decrypt\|import\|verify>` | Offline operator tool for the experimental local Octo store: decrypt a saved list, import files into the store, check the store (`docs/ASSET_MIRROR.md` §0). |
 
 Run the server in sandbox mode with `SUMIRE_PROFILE=sandbox npm run -w packages/server dev`.
 

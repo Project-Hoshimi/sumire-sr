@@ -2,17 +2,52 @@
 //
 //   node --test src/tls.test.ts
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import { X509Certificate } from 'node:crypto';
-import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  unlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test, { type TestContext } from 'node:test';
-import { buildSanExtension, ensureTlsCert } from './tls.ts';
+import { buildSanExtension, ensureTlsCert, findOpenSsl } from './tls.ts';
+
+const OPENSSL = findOpenSsl();
 
 function tempDir(t: TestContext): string {
   const dir = mkdtempSync(join(tmpdir(), 'sumire-tls-test-'));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   return dir;
+}
+
+/** Names left in `dir` that must never survive a generation attempt. */
+function leftovers(dir: string): string[] {
+  return readdirSync(dir).filter(
+    (name) => name === 'api.csr' || name === 'api.ext' || name === 'ca.srl' || name.includes('.tmp-'),
+  );
+}
+
+/** Write a throwaway 2048-bit private key (and cert) of its own. */
+function makeStrayKeyPair(dir: string, name: string): { key: string; crt: string } {
+  const key = join(dir, `${name}.key`);
+  const crt = join(dir, `${name}.crt`);
+  const res = spawnSync(
+    OPENSSL,
+    [
+      'req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-sha256', '-days', '1',
+      '-subj', `/CN=${name}`, '-keyout', key, '-out', crt,
+    ],
+    { encoding: 'utf8', env: { ...process.env, MSYS_NO_PATHCONV: '1' } },
+  );
+  assert.equal(res.status, 0, `openssl could not create ${name}: ${res.stderr}`);
+  return { key, crt };
 }
 
 test('ensureTlsCert generates a CA-signed leaf cert with all required SANs and reuses it on rerun', (t) => {
@@ -135,4 +170,76 @@ test('buildSanExtension validates HOST and rejects stray commas or newlines', ()
 
   const withNewline = buildSanExtension('bad\nDNS:evil.example');
   assert.doesNotMatch(withNewline, /evil\.example/);
+});
+
+test('ensureTlsCert leaves no csr/ext/srl or temp files behind', (t) => {
+  const dir = tempDir(t);
+
+  ensureTlsCert(dir, '0.0.0.0');
+
+  assert.deepEqual(leftovers(dir), [], `unexpected intermediate files: ${leftovers(dir).join(', ')}`);
+  assert.deepEqual(readdirSync(dir).sort(), ['api.crt', 'api.key', 'ca.crt', 'ca.key']);
+});
+
+test('ensureTlsCert restores the process umask after generating keys', (t) => {
+  const dir = tempDir(t);
+  const before = process.umask();
+
+  ensureTlsCert(dir, '0.0.0.0');
+
+  assert.equal(process.umask(), before);
+});
+
+test('ensureTlsCert warns about an invalid HOST and still produces a usable cert', (t) => {
+  const dir = tempDir(t);
+  const warnings: string[] = [];
+  const original = console.warn;
+  let result: ReturnType<typeof ensureTlsCert>;
+  console.warn = (...args: unknown[]) => {
+    warnings.push(args.map(String).join(' '));
+  };
+  try {
+    result = ensureTlsCert(dir, 'bad host_name');
+  } finally {
+    console.warn = original;
+  }
+
+  const leaf = new X509Certificate(result.cert);
+  const ca = new X509Certificate(readFileSync(join(dir, 'ca.crt')));
+  assert.equal(leaf.verify(ca.publicKey), true);
+  assert.doesNotMatch(leaf.subjectAltName ?? '', /bad host_name/);
+
+  const warned = warnings.join('\n');
+  assert.match(warned, /invalid HOST/);
+  assert.ok(
+    warned.includes(JSON.stringify('bad host_name')),
+    `warning should name the rejected value, got: ${warned}`,
+  );
+});
+
+test('ensureTlsCert throws when ca.crt and ca.key hold different keys', (t) => {
+  const dir = tempDir(t);
+  ensureTlsCert(dir, '0.0.0.0');
+  const stray = makeStrayKeyPair(dir, 'stray');
+  writeFileSync(join(dir, 'ca.key'), readFileSync(stray.key));
+  unlinkSync(join(dir, 'api.crt'));
+  unlinkSync(join(dir, 'api.key'));
+
+  assert.throws(() => ensureTlsCert(dir, '0.0.0.0'), /do not belong together/);
+  assert.equal(existsSync(join(dir, 'api.key')), false, 'no leaf key may be written after a CA mismatch');
+  assert.equal(existsSync(join(dir, 'api.crt')), false, 'no leaf cert may be written after a CA mismatch');
+  assert.deepEqual(leftovers(dir), [], 'failed run must clean up its temp files');
+});
+
+test('ensureTlsCert leaves no api.key/api.crt when the CA key is corrupt', (t) => {
+  const dir = tempDir(t);
+  ensureTlsCert(dir, '0.0.0.0');
+  writeFileSync(join(dir, 'ca.key'), 'not a private key');
+  unlinkSync(join(dir, 'api.crt'));
+  unlinkSync(join(dir, 'api.key'));
+
+  assert.throws(() => ensureTlsCert(dir, '0.0.0.0'), /do not belong together/);
+  assert.equal(existsSync(join(dir, 'api.key')), false);
+  assert.equal(existsSync(join(dir, 'api.crt')), false);
+  assert.deepEqual(leftovers(dir), []);
 });

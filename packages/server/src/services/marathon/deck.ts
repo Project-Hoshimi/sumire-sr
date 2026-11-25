@@ -110,7 +110,7 @@ async function resolveMarathonQuest(req: Decoded, rpc: string): Promise<QuestRow
  * Live card stats for filled deck positions, in the order given (sorted by
  * Position by the caller). Index is 1-based by array order.
  */
-async function deckCardStats(playerId: string, quest: QuestRow | null, positions: Decoded[]): Promise<LiveDeckCard[]> {
+export async function deckCardStats(playerId: string, quest: QuestRow | null, positions: Decoded[]): Promise<LiveDeckCard[]> {
   const setting = await getSetting();
   if (setting === null) throw new Error('master Setting is missing');
   const owned = await listElements(playerId, 'Cards', db);

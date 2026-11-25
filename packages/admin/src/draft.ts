@@ -296,18 +296,34 @@ export function moveBoxItem(box: DraftBox, from: number, to: number): DraftBox {
   return { ...box, items: normalizeOrders(items) };
 }
 
-/** Read a top-level draft field as rendered by the Settings tab. */
+/** Read a draft field, following a dotted path (`activityLesson.maxHours`). */
 export function draftValue(draft: MarathonDraftShape, path: string): unknown {
-  return draft[path];
+  let current: unknown = draft;
+  for (const key of path.split('.')) {
+    if (current === null || typeof current !== 'object') return undefined;
+    current = (current as Record<string, unknown>)[key];
+  }
+  return current;
 }
 
-/** Copy the draft with one top-level field replaced. */
+/** Copy the draft with one field replaced, cloning each object on the path. */
 export function withDraftValue(
   draft: MarathonDraftShape,
   path: string,
   value: unknown,
 ): MarathonDraftShape {
-  return { ...draft, [path]: value };
+  const keys = path.split('.');
+  const assign = (target: Record<string, unknown>, depth: number): Record<string, unknown> => {
+    const key = keys[depth];
+    if (depth === keys.length - 1) return { ...target, [key]: value };
+    const current = target[key];
+    const child =
+      current !== null && typeof current === 'object' && !Array.isArray(current)
+        ? (current as Record<string, unknown>)
+        : {};
+    return { ...target, [key]: assign(child, depth + 1) };
+  };
+  return assign(draft as unknown as Record<string, unknown>, 0) as MarathonDraftShape;
 }
 
 /**

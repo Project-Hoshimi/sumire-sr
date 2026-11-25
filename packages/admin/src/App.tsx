@@ -4,6 +4,7 @@ import { ApiError, login, logout, onUnauthorized, session, takePostLoginHash } f
 import { ErrorBanner } from './components/ErrorBanner.tsx';
 import { EventPublishPage } from './pages/EventPublishPage.tsx';
 import { EventsPage } from './pages/EventsPage.tsx';
+import { RacePlayersPage } from './pages/race/RacePlayersPage.tsx';
 import { RostersPage } from './pages/RostersPage.tsx';
 import { UsersPage } from './pages/UsersPage.tsx';
 import { roleAtLeast } from './role.ts';
@@ -86,6 +87,8 @@ function routeView(route: Route, user: AdminSessionUser) {
       return <EventsPage id={route.id} user={user} />;
     case 'publish':
       return <EventPublishPage id={route.id} user={user} />;
+    case 'racePlayers':
+      return <RacePlayersPage id={route.id} user={user} />;
     case 'rosters':
       return <RostersPage user={user} />;
     case 'rosterNew':

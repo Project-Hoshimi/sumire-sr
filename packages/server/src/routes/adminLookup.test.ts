@@ -34,6 +34,7 @@ import {
   type LookupQuestSource,
   type LookupResourceSource,
   type LookupRewardRow,
+  type LookupRewardType,
   type SkillRowSource,
 } from './adminLookup.ts';
 
@@ -785,7 +786,7 @@ test('browses rewards without a query, sorted by type, name and id', async (t) =
   assert.deepEqual(invalid.json(), { error: 'invalid type' });
 });
 
-test('lists reward resource types with counts, snake names and grantability', async (t) => {
+test('lists reward resource types with counts, snake names, grantability and idless', async (t) => {
   const rows: LookupRewardRow[] = [
     ...REWARD_ROWS,
     // Story (10) is a real reward resource but `applyGrants` cannot deliver it.
@@ -801,11 +802,49 @@ test('lists reward resource types with counts, snake names and grantability', as
     headers: { cookie: cookieHeader },
   });
   assert.equal(res.statusCode, 200, res.body);
-  assert.deepEqual(res.json(), [
-    { resourceType: 1, typeLabel: 'Item', snakeName: 'item', count: 3, grantable: true },
-    { resourceType: 10, typeLabel: 'Story', snakeName: 'story', count: 1, grantable: false },
-    { resourceType: 15, typeLabel: 'Stone', snakeName: 'stone', count: 2, grantable: true },
-  ]);
+  const body = res.json() as LookupRewardType[];
+  const byType = new Map(body.map((row) => [row.resourceType, row]));
+
+  assert.deepEqual(
+    body.map((row) => row.resourceType),
+    [...body.map((row) => row.resourceType)].sort((a, b) => a - b),
+    'types stay sorted by resourceType',
+  );
+  assert.deepEqual(byType.get(1), {
+    resourceType: 1,
+    typeLabel: 'Item',
+    snakeName: 'item',
+    count: 3,
+    grantable: true,
+    idless: false,
+  });
+  assert.deepEqual(byType.get(10), {
+    resourceType: 10,
+    typeLabel: 'Story',
+    snakeName: 'story',
+    count: 1,
+    grantable: false,
+    idless: false,
+  });
+  // Stone rows exist but carry no resource id, so it is idless.
+  assert.deepEqual(byType.get(15), {
+    resourceType: 15,
+    typeLabel: 'Stone',
+    snakeName: 'stone',
+    count: 2,
+    grantable: true,
+    idless: true,
+  });
+  // PaidStone (16) is grantable and no master reward uses it yet: it is still
+  // listed, with a zero count, and has no name-table rows.
+  assert.deepEqual(byType.get(16), {
+    resourceType: 16,
+    typeLabel: 'PaidStone',
+    snakeName: 'paid_stone',
+    count: 0,
+    grantable: true,
+    idless: true,
+  });
 });
 
 test('browses resources of a single type', async (t) => {

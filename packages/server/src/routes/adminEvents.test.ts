@@ -1,10 +1,12 @@
 // Admin event/schedule API tests. Unit-level: memory admin + event stores and
-// `fastify.inject`, so no Postgres or listener is needed.
+// `fastify.inject`, so no listener is needed. The route's master importer is
+// injected, so import-from-master stays off Postgres; the pool is only closed
+// here for the files that share it.
 //
 //   node --test src/routes/adminEvents.test.ts
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import test, { beforeEach } from 'node:test';
+import test, { after, beforeEach } from 'node:test';
 import Fastify, { type FastifyInstance } from 'fastify';
 import cookie from '@fastify/cookie';
 import { npcRosters } from '../live/data/npcRosters.ts';
@@ -20,7 +22,10 @@ import {
 } from '../services/events/registry.ts';
 import { registerEventPlugin } from '../services/events/plugin.ts';
 import { memoryMarathonPlayerStateReader } from '../services/events/preview.ts';
+import { deriveMarathonDraft } from '../services/marathon/importDraft.ts';
 import { memoryEventStore, type EventStore } from '../services/events/store.ts';
+import { client as dbClient } from '../db/client.ts';
+import { catalogDrafts as moshikoiCatalogDrafts } from '../services/moshikoi/catalog.ts';
 import { adminRoutes } from './admin.ts';
 import { adminEventRoutes } from './adminEvents.ts';
 
@@ -50,6 +55,17 @@ function makeApp(store: EventStore & { reset(): void } = memoryEventStore()): Te
   app.register(adminEventRoutes, {
     admin: { store: adminStore },
     players: memoryMarathonPlayerStateReader([]),
+    // An in-memory master importer keeps import-from-master off Postgres.
+    importFromMaster: async (kind, eventId) => {
+      if (kind !== 'marathon') throw new Error(`no test importer for kind ${kind}`);
+      return deriveMarathonDraft(eventId, {
+        eventStoryAssetIdExists: false,
+        eventMission: null,
+        raidQuestName: null,
+        boxGachaGroupId: '',
+        existingItemIds: [],
+      });
+    },
   });
   return { app, adminStore, eventStore };
 }
@@ -191,6 +207,11 @@ async function loginRole(
 beforeEach(() => {
   resetEventRegistryForTests();
 });
+
+// The admin stores are in memory, but `import-from-master` reads master rows
+// through the shared Drizzle pool (`src/db/client.ts`). End it after the file so
+// `node --test` has no open sockets and exits on its own.
+after(() => dbClient.end({ timeout: 5 }));
 
 // Role matrix
 
@@ -1162,4 +1183,104 @@ test('a deleted catalog id is not resurrected by the startup import', async (t) 
   });
   assert.equal(created.statusCode, 201, created.body);
   assert.equal((await eventStore.listDeleted()).has(EVENT_ID), false, 'tombstone is cleared');
+});
+
+// Moshikoi (permanent event kind)
+
+const MOSHIKOI_ID = 'love-24-1114';
+
+function moshikoiDraft() {
+  const found = moshikoiCatalogDrafts().find((candidate) => candidate.id === MOSHIKOI_ID);
+  assert.ok(found, 'checked-in moshikoi draft exists');
+  return found;
+}
+
+async function seedMoshikoi(eventStore: EventStore): Promise<void> {
+  await initEventRegistry({
+    store: eventStore,
+    drafts: [{ kind: 'moshikoi', draft: moshikoiDraft() }],
+  });
+}
+
+test('event list and detail report the plugin lifecycle', async (t) => {
+  const { app, adminStore, eventStore } = makeApp();
+  t.after(() => app.close());
+  await seed(eventStore, [draft()]);
+  await initEventRegistry({
+    store: eventStore,
+    drafts: [{ kind: 'moshikoi', draft: moshikoiDraft() }],
+  });
+  const viewer = await loginRole(app, adminStore, 'viewer');
+
+  const list = await call(app, viewer, 'GET', '/sumire/admin/events');
+  assert.equal(list.statusCode, 200, list.body);
+  const items = list.json() as { id: string; lifecycle: string }[];
+  assert.equal(items.find((row) => row.id === EVENT_ID)?.lifecycle, 'scheduled');
+  assert.equal(items.find((row) => row.id === MOSHIKOI_ID)?.lifecycle, 'permanent');
+
+  const marathon = await call(app, viewer, 'GET', `/sumire/admin/events/${EVENT_ID}`);
+  assert.equal(marathon.statusCode, 200, marathon.body);
+  assert.equal((marathon.json() as { lifecycle: string }).lifecycle, 'scheduled');
+
+  const moshikoi = await call(app, viewer, 'GET', `/sumire/admin/events/${MOSHIKOI_ID}`);
+  assert.equal(moshikoi.statusCode, 200, moshikoi.body);
+  const detail = moshikoi.json() as { lifecycle: string; schedule: unknown[] };
+  assert.equal(detail.lifecycle, 'permanent');
+  assert.deepEqual(detail.schedule, []);
+});
+
+test('schedule replace is rejected for a permanent moshikoi event', async (t) => {
+  const { app, adminStore, eventStore } = makeApp();
+  t.after(() => app.close());
+  await seedMoshikoi(eventStore);
+  const publisher = await loginRole(app, adminStore, 'publisher');
+
+  const res = await call(
+    app,
+    publisher,
+    'PUT',
+    `/sumire/admin/events/${MOSHIKOI_ID}/schedule`,
+    {
+      schedules: [
+        {
+          startsAt: '2026-02-01T00:00:00Z',
+          endsAt: '2026-02-02T00:00:00Z',
+          exchangeEndsAt: '2026-02-03T00:00:00Z',
+          enabled: true,
+        },
+      ],
+    },
+  );
+  assert.equal(res.statusCode, 400, res.body);
+  assert.equal(
+    (res.json() as { error?: string }).error,
+    'permanent events have no schedule',
+  );
+  assert.deepEqual(await eventStore.listSchedule(), []);
+});
+
+test('POST / without a draft creates a moshikoi event from the default draft', async (t) => {
+  const { app, adminStore, eventStore } = makeApp();
+  t.after(() => app.close());
+  await initEventRegistry({ store: eventStore, drafts: [] });
+  const editor = await loginRole(app, adminStore, 'editor');
+
+  const created = await call(app, editor, 'POST', '/sumire/admin/events', {
+    id: 'moshikoi-default',
+    kind: 'moshikoi',
+    title: 'New love event',
+  });
+  assert.equal(created.statusCode, 201, created.body);
+  const body = created.json() as {
+    draft: {
+      id: string;
+      title: string;
+      catalog: { loveId: string };
+      routes: { loveId: string };
+    };
+  };
+  assert.equal(body.draft.id, 'moshikoi-default');
+  assert.equal(body.draft.title, 'New love event');
+  assert.equal(body.draft.catalog.loveId, 'moshikoi-default');
+  assert.equal(body.draft.routes.loveId, 'moshikoi-default');
 });
