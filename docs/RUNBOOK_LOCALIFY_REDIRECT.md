@@ -55,8 +55,8 @@ Other things the Frida script does that are **not** part of this work: the love-
 - **Leave these alone:** `id.qseed.jp`, Google `identitytoolkit` / `securetoken` (Firebase auth), Firebase Storage, and the asset CDN `d2ilil7yh5oi1v.cloudfront.net`. A blanket :443 redirect breaks Firebase.
 - **Server TLS:** sumire-sr runs `TLS=1 HTTP2=1 PORT=8443`, binds `HOST` (default `0.0.0.0`), and loads `tls/api.key` + `tls/api.crt` (`fastify-api/src/tls.ts`).
   - `tls/api.crt` is signed by `tls/ca.crt` (CN "Idoly Pride Dev CA").
-  - Current SANs (`tls/api.ext`): `DNS:api.octo-cloud.com,DNS:api.game-idolypride.jp,DNS:0.0.0.0,IP:127.0.0.1`.
-  - **`ca.key` is not in `tls/`.**
+  - Current SANs, written into the certificate by `ensureTlsCert()` (`fastify-api/src/tls.ts`; no `tls/api.ext` is left behind): `DNS:api.game-idolypride.jp,DNS:climaster.game-idolypride.jp,DNS:api.octo-cloud.com,DNS:identitytoolkit.googleapis.com,DNS:securetoken.googleapis.com,DNS:www.googleapis.com,DNS:firebasestorage.googleapis.com,DNS:localhost`, plus `HOST` when it is a DNS name, plus `IP:127.0.0.1` and one `IP:` entry per non-internal IPv4 interface. `HOST=0.0.0.0` (the default) and any other value that is neither an IP nor a valid DNS name is left out (the latter logs a `[tls] WARNING: ignoring invalid HOST` line).
+  - `tls/ca.key` is generated next to `tls/ca.crt` on first boot; keep it, it signs new leaves.
 
 ### HoshimiLocalify architecture (verified)
 - **Injection:** an Xposed/LSPosed module (API 82) that also works under LSPatch. Entry point: `app/src/main/java/io/github/cylear/hoshimi/localify/HoshimiHookMain.kt`. It calls `System.loadLibrary` (~line 591) and then JNI `initHook(libil2cpp path, filesDir)` (~line 198).
@@ -171,11 +171,10 @@ Expose `namespace HoshimiLocal::PrivateServer { void Install(HookInstaller* hook
 ### 1.3 sumire-sr changes (in `sumire-sr`, on a branch off `main`)
 1. `fastify-api/src/config.ts`: add `publicBaseUrl: process.env.PUBLIC_BASE_URL ?? 'https://api.game-idolypride.jp'`.
 2. `fastify-api/src/services/master.ts:50`: build `DownloadUrl` as `` `${config.publicBaseUrl}/master/${p.type}/${p.fileName}` ``. The default keeps the Frida setup working byte for byte.
-3. Certificate ⛔ (ask the user where `ca.key` is; it is not in `tls/`):
+3. Certificate ⛔ (the server generates and signs its own leaf; keep the existing `tls/ca.key`):
    - Ask the user for the LAN DNS name (preferred) and/or IP of the server host.
-   - Add them to `tls/api.ext`, e.g. `DNS:sumire.lan,IP:192.168.x.y`.
-   - Re-sign: `openssl x509 -req -in tls/api.csr -CA tls/ca.crt -CAkey <ca.key> -CAserial tls/ca.srl -out tls/api.crt -days 3650 -sha256 -extfile tls/api.ext`.
-   - If `ca.key` is lost, generate a new CA. Then the Magisk CA module, the PEM in `frida/e2e_hooks.js` §7, and the mod config **all** need the new CA; tell the user before going ahead.
+   - The SANs come from `HOST` (`ensureTlsCert()` in `fastify-api/src/tls.ts` rewrites them on every generation). Set `HOST=<DNS name or IP>`, delete `tls/api.crt` and `tls/api.key`, and restart: the next boot re-signs a leaf with the existing `tls/ca.crt`/`tls/ca.key` and leaves no `api.csr`, `api.ext` or `ca.srl` behind.
+   - If `ca.key` is lost, delete `tls/ca.crt` and `tls/ca.key` as well so a new CA is generated. Then the Magisk CA module, the PEM in `frida/e2e_hooks.js` §7, and the mod config **all** need the new CA; tell the user before going ahead.
    - A DNS name must resolve on the phone, through the router's DNS or a hosts entry. Whether YAHA's rustls accepts IP SANs depends on its version, so test it in 1.4.
 4. Docs: add `docs/CLIENT_SETUP.md` with a "HoshimiLocalify-sr redirect (no Frida)" section covering env vars, cert SANs, mod settings and troubleshooting. Link it from `docs/SESSION_STATE.md`. Keep the Frida path documented as the fallback.
 

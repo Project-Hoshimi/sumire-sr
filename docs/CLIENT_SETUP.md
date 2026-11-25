@@ -25,7 +25,7 @@ TLS=1 HTTP2=1 PORT=8443 node src/server.ts
 
 - **Leave `PUBLIC_BASE_URL` unset** (default `https://api.game-idolypride.jp`). The mod keeps the game's real hostnames and steers them to the server address at the DNS/connect level. Unity's TLS checks the certificate CN only (CN=`api.game-idolypride.jp`), so a master `DownloadUrl` pointing at an IP fails with `Curl error 60: Cert verify failed. Certificate Common Name(CN) does not match`. `PUBLIC_BASE_URL` is only for setups that rewrite URLs (none currently).
 - The server binds `0.0.0.0`, so the phone must reach it directly over the LAN. An `adb reverse tcp:8443 tcp:8443` tunnel with Server URL `https://127.0.0.1:8443` also works for USB testing.
-- The server TLS cert (`tls/api.crt`, signed by `tls/ca.crt`) carries CN `api.game-idolypride.jp`; its SANs are in `tls/api.ext`.
+- The server TLS cert and CA (`tls/api.crt` signed by `tls/ca.crt`, both under `<repo>/tls`; also `<repo>/tls` in the `packages/server` export) are generated on first boot by `ensureTlsCert()` in `fastify-api/src/tls.ts` when `TLS=1`. `api.crt` carries CN `api.game-idolypride.jp`; the SAN list is built from `HOST` plus the game/Firebase hosts and the machine's LAN IPv4 addresses, and no `api.ext`/`api.csr` file is kept.
 - `tls/ca.crt` is the CA to paste (subject `CN=Idoly Pride Dev CA`).
 - `allowHTTP1: true` is kept on (see `fastify-api/src/tls.ts`); without it UnityWebRequest master downloads get `403 "Missing ALPN"`.
 - The config entry is `publicBaseUrl` in `fastify-api/src/config.ts`, read from `PUBLIC_BASE_URL` (default `https://api.game-idolypride.jp`).
@@ -69,7 +69,7 @@ Regression: turn the switch off and relaunch — the game should reach the offic
 - `fastify-api/src/config.ts` (`publicBaseUrl`)
 - `fastify-api/src/services/master.ts` (`DownloadUrl`)
 - `fastify-api/src/server.ts` (`/master/:type/:file`, `/v2/*`)
-- `fastify-api/src/tls.ts` (`allowHTTP1`)
-- `tls/ca.crt`, `tls/api.ext`
+- `fastify-api/src/tls.ts` (`ensureTlsCert()` writes `tls/api.crt`, `tls/api.key` and, on first boot, `tls/ca.crt` + `tls/ca.key`; `allowHTTP1`)
+- `tls/ca.crt`
 - `frida/attach_e2e.sh`, `frida/e2e_hooks.js` (legacy)
 - `sumire-sr/HoshimiLocalify-sr` (`feat/private-server` branch, `FORK.md`)
