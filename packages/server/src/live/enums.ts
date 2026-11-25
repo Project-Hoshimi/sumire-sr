@@ -1,3 +1,7 @@
+// Portions of this file are derived from solis-server
+// (https://github.com/vertesan/solis-server), licensed under AGPL-3.0,
+// and were modified for sumire-sr. See NOTICE.
+
 // Ported from the generated Solis enums (fastify-api/src/gen/enums.ts) for the live simulator.
 // Only the enums the simulator reads are included; values are the wire numbers.
 // Node type stripping forbids `enum`, so each member lives in a `const` object.

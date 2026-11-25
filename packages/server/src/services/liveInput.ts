@@ -1,3 +1,7 @@
+// Portions of this file are derived from solis-server
+// (https://github.com/vertesan/solis-server), licensed under AGPL-3.0,
+// and were modified for sumire-sr. See NOTICE.
+
 // Port of the DB-facing live input preparation from Solis
 // `internal/server/rpc/servers/internal/viber/live.go` (+ `live_music.go`).
 //
