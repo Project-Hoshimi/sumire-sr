@@ -18,6 +18,7 @@ import { memoryEventStore } from '../events/store.ts';
 import { getHandler, type RpcContext } from '../handlers.ts';
 import { listElements, putElements } from '../playerState.ts';
 import { getCorpusResponse, loadCorpus } from '../replay/corpus.ts';
+import { deleteTestPlayers, isDatabaseUnreachable } from '../../testing/deleteTestPlayers.ts';
 import { racePlugin } from './plugin.ts';
 import { normalizeRaceState, loadRaceState } from './state.ts';
 import { applyRaceStoryOverride } from './storyOverride.ts';
@@ -80,14 +81,13 @@ before(async () => {
 });
 
 after(async () => {
-  for (const entry of created) {
-    try {
-      await db.execute(sql`delete from player_entities where player_id = ${entry.playerId}`);
-      await db.execute(sql`delete from players where id = ${entry.playerId}`);
-      await db.execute(sql`delete from accounts where id = ${entry.accountId}`);
-    } catch {
-      // Nothing was created when the database is unreachable.
-    }
+  try {
+    await deleteTestPlayers(
+      created.map((entry) => entry.playerId),
+      created.map((entry) => entry.accountId),
+    );
+  } catch (error) {
+    if (!isDatabaseUnreachable(error)) throw error;
   }
   resetEventRegistryForTests();
   await client.end({ timeout: 5 });

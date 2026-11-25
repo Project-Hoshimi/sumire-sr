@@ -11,6 +11,7 @@ import { sql } from 'drizzle-orm';
 // Loads the generated field specs, so item rows encode and decode (`specFor`).
 import '@sumire-sr/protocol/gen/registry.ts';
 import { client, db } from '../../db/client.ts';
+import { deleteTestPlayers } from '../../testing/deleteTestPlayers.ts';
 import { adminRoutes } from '../../routes/admin.ts';
 import { adminRaceRoutes, type RaceSummary } from '../../routes/adminRace.ts';
 import { hashAdminPassword, LoginLimiter } from '../admin/auth.ts';
@@ -64,18 +65,8 @@ async function dbAvailable(): Promise<boolean> {
 }
 
 after(async () => {
-  try {
-    await db.execute(
-      sql`delete from player_entities where player_id in (${playerIds[0]}, ${playerIds[1]}, ${playerIds[2]})`,
-    );
-    await db.execute(
-      sql`delete from players where id in (${playerIds[0]}, ${playerIds[1]}, ${playerIds[2]})`,
-    );
-    await db.execute(
-      sql`delete from accounts where id in (${accountIds[0]}, ${accountIds[1]}, ${accountIds[2]})`,
-    );
-  } catch {
-    // Nothing was created when the database is unreachable.
+  if (await dbAvailable()) {
+    await deleteTestPlayers(playerIds, accountIds);
   }
   await client.end({ timeout: 5 });
 });
