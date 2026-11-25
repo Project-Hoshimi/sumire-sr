@@ -11,6 +11,7 @@ import { after, test } from 'node:test';
 import { sql } from 'drizzle-orm';
 import { client, db } from '../../db/client.ts';
 import { accounts, players } from '../../db/schema.ts';
+import { listHierarchyDetailGrades } from '../../master/index.ts';
 import { getSingleton, putSingleton } from '../../services/playerState.ts';
 import {
   loadHierarchyStanding,
@@ -29,6 +30,7 @@ import type { Decoded } from '@sumire-sr/protocol/runtime/proto.ts';
 const created: { accountId: string; playerId: string }[] = [];
 
 let available: boolean | null = null;
+let masterLoaded: boolean | null = null;
 
 async function dbAvailable(): Promise<boolean> {
   if (available !== null) return available;
@@ -39,6 +41,17 @@ async function dbAvailable(): Promise<boolean> {
     available = false;
   }
   return available;
+}
+
+/** The hierarchy tests need the master grade rows, which a fresh CI database lacks. */
+async function masterLoadedAvailable(): Promise<boolean> {
+  if (masterLoaded !== null) return masterLoaded;
+  try {
+    masterLoaded = (await listHierarchyDetailGrades()).length > 0;
+  } catch {
+    masterLoaded = false;
+  }
+  return masterLoaded;
 }
 
 after(async () => {
@@ -59,6 +72,10 @@ async function newPlayer(
 ): Promise<{ playerId: string; name: string } | null> {
   if (!(await dbAvailable())) {
     t.skip('dev postgres is not reachable; run `npm run db:migrate` and retry');
+    return null;
+  }
+  if (!(await masterLoadedAvailable())) {
+    t.skip('master hierarchy grades are not loaded (no game data); run the master import and retry');
     return null;
   }
   const suffix = randomUUID();
