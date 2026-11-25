@@ -27,6 +27,7 @@ import { getCard, getItemAmount, grantCard, grantItem } from '../inventory.ts';
 import { getHandler, type RpcContext } from '../handlers.ts';
 import { AppRpcError, ERROR_CODE } from '../errors.ts';
 import { publicUserIdOf } from '../friendLinks.ts';
+import { deleteTestPlayers, isDatabaseUnreachable } from '../../testing/deleteTestPlayers.ts';
 import { raceConfigFor } from './catalog.ts';
 import { loadRaceFormation } from './live.ts';
 import { racePlugin } from './plugin.ts';
@@ -119,12 +120,13 @@ before(async () => {
 });
 
 after(async () => {
-  if (created.length > 0) {
-    const playerIds = created.map((entry) => entry.playerId);
-    const accountIds = created.map((entry) => entry.accountId);
-    await db.delete(playerEntities).where(inArray(playerEntities.playerId, playerIds));
-    await db.delete(players).where(inArray(players.id, playerIds));
-    await db.delete(accounts).where(inArray(accounts.id, accountIds));
+  try {
+    await deleteTestPlayers(
+      created.map((entry) => entry.playerId),
+      created.map((entry) => entry.accountId),
+    );
+  } catch (error) {
+    if (!isDatabaseUnreachable(error)) throw error;
   }
   resetEventRegistryForTests();
   await client.end({ timeout: 5 });

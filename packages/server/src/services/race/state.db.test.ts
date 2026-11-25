@@ -8,6 +8,7 @@ import { randomUUID } from 'node:crypto';
 import { after, test } from 'node:test';
 import { sql } from 'drizzle-orm';
 import { client, db } from '../../db/client.ts';
+import { deleteTestPlayers } from '../../testing/deleteTestPlayers.ts';
 import {
   loadRaceDecks,
   loadRaceState,
@@ -34,12 +35,8 @@ async function dbAvailable(): Promise<boolean> {
 }
 
 after(async () => {
-  try {
-    await db.execute(sql`delete from player_entities where player_id = ${playerId}`);
-    await db.execute(sql`delete from players where id = ${playerId}`);
-    await db.execute(sql`delete from accounts where id = ${accountId}`);
-  } catch {
-    // Nothing was created when the database is unreachable.
+  if (await dbAvailable()) {
+    await deleteTestPlayers([playerId], [accountId]);
   }
   await client.end({ timeout: 5 });
 });
