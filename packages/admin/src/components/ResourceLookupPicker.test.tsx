@@ -52,10 +52,12 @@ const STONE_REWARD: LookupReward = {
 };
 
 const TYPES: LookupRewardType[] = [
-  { resourceType: 1, typeLabel: 'Item', snakeName: 'item', count: 3, grantable: true },
-  { resourceType: 15, typeLabel: 'Stone', snakeName: 'stone', count: 2, grantable: true },
+  { resourceType: 1, typeLabel: 'Item', snakeName: 'item', count: 3, grantable: true, idless: false },
+  { resourceType: 15, typeLabel: 'Stone', snakeName: 'stone', count: 2, grantable: true, idless: false },
   // Story rows exist in rewards but the server cannot grant them.
-  { resourceType: 10, typeLabel: 'Story', snakeName: 'story', count: 1, grantable: false },
+  { resourceType: 10, typeLabel: 'Story', snakeName: 'story', count: 1, grantable: false, idless: false },
+  // PaidStone has no name-table rows: composes with an empty resource id.
+  { resourceType: 16, typeLabel: 'PaidStone', snakeName: 'paid_stone', count: 0, grantable: true, idless: true },
 ];
 
 const RESOURCES: LookupResource[] = [
@@ -282,6 +284,31 @@ describe('ResourceLookupPicker', () => {
 
     await writer.click(screen.getByRole('button', { name: 'Use custom Reward' }));
     expect(screen.getByTestId('value').textContent).toBe('rd_auto;item;item-a;3');
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  });
+
+  it('composes an idless type with an empty resource id', async () => {
+    mockServer();
+    const writer = userEvent.setup();
+    render(<Harness kind="rewards" />);
+    await writer.click(screen.getByRole('button', { name: 'Browse Reward' }));
+    await writer.click(await screen.findByRole('tab', { name: 'Custom' }));
+
+    const customType = await screen.findByLabelText('Reward custom type');
+    await writer.selectOptions(customType, '16');
+
+    // No resource search or list for a type that has no ids.
+    expect(screen.queryByLabelText('Reward resource search')).toBeNull();
+    expect(screen.queryByRole('list', { name: 'Reward resources' })).toBeNull();
+    expect(screen.getByText('No item to pick — set the amount only.')).toBeTruthy();
+
+    const amount = screen.getByLabelText('Reward amount');
+    await writer.clear(amount);
+    await writer.type(amount, '500');
+    expect(await screen.findByText('rd_auto;paid_stone;;500')).toBeTruthy();
+
+    await writer.click(screen.getByRole('button', { name: 'Use custom Reward' }));
+    expect(screen.getByTestId('value').textContent).toBe('rd_auto;paid_stone;;500');
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
   });
 

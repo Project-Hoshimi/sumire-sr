@@ -46,8 +46,22 @@ export interface EventScheduleInput {
   exchangeEndsAt: string;
 }
 
+/**
+ * How an event kind relates to its authored schedule.
+ *
+ * - `scheduled`: the draft carries an authored `schedule`, imported as one
+ *   event_schedule row; "published" and "live" are different things.
+ * - `permanent`: the draft has no schedule (`draftSchedule` returns undefined),
+ *   so no event_schedule rows are written and "published = live".
+ *
+ * Defaults to `scheduled` when a plugin does not set it.
+ */
+export type EventLifecycle = 'scheduled' | 'permanent';
+
 export interface EventPlugin<Draft = unknown, Runtime = unknown> {
   kind: string;
+  /** Schedule semantics of this kind; omitted means `scheduled`. */
+  lifecycle?: EventLifecycle;
   schema: EditorSchema;
   /** Parse untyped JSON (catalog file or DB jsonb) into a Draft; throw Error with a clear message when it is not even shaped like a draft. */
   parseDraft(raw: unknown): Draft;
@@ -86,4 +100,9 @@ export function eventPlugin(kind: string): EventPlugin | undefined {
 
 export function eventPlugins(): EventPlugin[] {
   return [...plugins.values()];
+}
+
+/** Lifecycle of `kind`; unknown kinds read as `scheduled` so stored rows stay renderable. */
+export function pluginLifecycle(kind: string): EventLifecycle {
+  return plugins.get(kind)?.lifecycle ?? 'scheduled';
 }

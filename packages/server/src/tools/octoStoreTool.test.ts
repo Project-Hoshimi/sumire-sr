@@ -191,6 +191,22 @@ describe('import', () => {
     assert.equal(again.copied.files, 0);
   });
 
+  test('removes the temp file when the final rename fails', async () => {
+    const sources = makeSources();
+    const to = fresh('store');
+    // The destination path is a non-empty directory, so the final rename cannot replace it.
+    const dest = nested(to, A);
+    mkdirSync(dest, { recursive: true });
+    writeFileSync(join(dest, 'keep'), 'not a file');
+    await assert.rejects(
+      importStore({ database: db, to, sources, apply: true, prefixes: ['img_'] }),
+      /EISDIR|ENOTEMPTY|EPERM|ENOTDIR/,
+    );
+    const left = readdirSync(to, { recursive: true }).map(String).filter((p) => p.includes('.tmp-'));
+    assert.deepEqual(left, []);
+    assert.equal(readFileSync(join(dest, 'keep'), 'utf8'), 'not a file');
+  });
+
   test('prefix filter and byte budget', async () => {
     const sources = makeSources();
     const onlyAdv = await importStore({ database: db, to: fresh('store'), sources, apply: false, prefixes: ['adv_'] });
@@ -260,6 +276,30 @@ describe('verify', () => {
     put(join(to, 'stray.tmp-abc'), 'partial');
     const r = await verifyStore({ database: db, assetDirs: [to], orphans: true });
     assert.equal(r.orphans?.length, 2);
+  });
+
+  test('a missing asset directory yields no orphans and exit 0', async () => {
+    const to = await store();
+    put(nested(to, E), E);
+    const dir = fresh('cmd');
+    const dbFile = join(dir, 'rev.plain');
+    writeFileSync(dbFile, db);
+    const missing = join(dir, 'no-such-store');
+    const o = lines();
+    assert.equal(await main(['verify', '--db', dbFile, '--assets', to, '--assets', missing, '--orphans'], {}, o.log), 0);
+    assert.match(o.out.join('\n'), /orphans\s+0 files/);
+  });
+
+  test('command: --orphans exits 1 when an orphan is found', async () => {
+    const to = await store();
+    put(nested(to, E), E);
+    put(join(to, 'stray.tmp-abc'), 'partial');
+    const dir = fresh('cmd');
+    const dbFile = join(dir, 'rev.plain');
+    writeFileSync(dbFile, db);
+    const o = lines();
+    assert.equal(await main(['verify', '--db', dbFile, '--assets', to, '--orphans'], {}, o.log), 1);
+    assert.match(o.out.join('\n'), /orphans\s+1 files/);
   });
 
   test('command: exit codes, env defaults and JSON report', async () => {

@@ -8,6 +8,8 @@ export const GRPC_STATUS = {
   OK: 0,
   INVALID_ARGUMENT: 3,
   PERMISSION_DENIED: 7,
+  /** The request is well-formed but the current state forbids it. */
+  FAILED_PRECONDITION: 9,
   UNIMPLEMENTED: 12,
   INTERNAL: 13,
   UNAUTHENTICATED: 16,
@@ -33,8 +35,16 @@ export const ERROR_CODE = {
   PASSWORD_INVALID: 3004,
   /** `s_ErrorCode_MigrationTargetNotFound`: the one-time token expired/used. */
   MIGRATION_TARGET_NOT_FOUND: 3009,
+  /** `s_ErrorCode_ConditionInvalid`: a master/event condition is not met. */
+  CONDITION_INVALID: 3010,
+  /** `s_ErrorCode_ResourceNotEnough`: the player lacks the item/currency spent. */
+  RESOURCE_NOT_ENOUGH: 3011,
   /** `s_ErrorCode_FunctionLocked`: the RPC has no server-side handler yet. */
   FUNCTION_LOCKED: 3022,
+  /** `s_ErrorCode_EventConditionInvalid`: the event state forbids the action. */
+  EVENT_CONDITION_INVALID: 3024,
+  /** `s_ErrorCode_NotInCoolTime`: the target is not on cool time (reset refused). */
+  NOT_IN_COOL_TIME: 3029,
   /** `ErrorCode_AlreadyMaximumStamina`: a stamina item was used at full stamina. */
   ALREADY_MAXIMUM_STAMINA: 3028,
 } as const;
@@ -122,9 +132,9 @@ export class NotImplementedError extends RpcError {
  * from the response (`x-error-code` / `x-error-action`) instead of a generic
  * dialog. The server catch maps it onto `sendGrpcError` directly.
  *
- * `grpcStatus` defaults to UNAUTHENTICATED (16); this repo has no
- * FAILED_PRECONDITION constant, and 16 is what the client already routes to its
- * re-login/dialog flow.
+ * `grpcStatus` defaults to UNAUTHENTICATED (16), which is what the client
+ * already routes to its re-login/dialog flow. Callers that need a specific
+ * canonical status (e.g. FAILED_PRECONDITION) pass it explicitly.
  */
 export class AppRpcError extends RpcError {
   readonly code: number;

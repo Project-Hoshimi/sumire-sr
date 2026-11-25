@@ -4,10 +4,19 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  INITIAL_RAID_STAMINA,
+  RAID_LIMIT_HOURS,
+  RAID_REQUIRED_POINT_FRIEND_DISCOUNT_RATE_PERMIL,
+  RAID_STAMINA_RECOVERY_MINUTES,
   buildEventMissionInfo,
   buildEventStoryInfo,
+  buildLadderInfo,
+  buildRaidMarathonInfoFields,
+  buildRaidQuestInfo,
   dedupeEventMissions,
   freshMarathonMission,
+  ladderPointItemIdCandidate,
+  raidStaminaRecoveryItemIdCandidate,
   sameJstDay,
 } from './eventInfo.ts';
 import { MissionType, applyMissionProgress } from '../missionProgress.ts';
@@ -241,4 +250,299 @@ test('dedupe: keeps the master order and ignores TargetIds order', () => {
   const second = eventMissionMaster('ms-b', { MissionType: 1202 });
   const duplicate = eventMissionMaster('ms-c', { TargetIds: ['target-test-1', 'target-test-2'] });
   assert.deepEqual(masterIds(dedupeEventMissions([first, second, duplicate])), ['ms-a', 'ms-b']);
+});
+
+const RAID_QUEST_MSG = 'Solis.Common.Proto.Api.MarathonRaidQuest';
+const RAID_QUEST_DIFFICULTY_MSG = 'Solis.Common.Proto.Api.MarathonRaidQuestDifficulty';
+
+test('raid quest: null or undefined row gives undefined', () => {
+  assert.equal(buildRaidQuestInfo(null), undefined);
+  assert.equal(buildRaidQuestInfo(undefined), undefined);
+});
+
+test('raid quest: every master field maps to the api field and difficulties are sorted', () => {
+  const info = buildRaidQuestInfo({
+    Id: 'marathon-raid-test-quest-raid',
+    StageId: 'stage-live-dome-02-02',
+    Name: '協力ライブ',
+    Description: '協力ライブ',
+    UnlockConditionId: 'unlock-test-1',
+    UnlockDescription: 'No.4を1つでもクリアしましょう',
+    MusicId: 'music-test-001',
+    MusicChartPatternId: 'chart-test-001-001',
+    Position1AttributeType: 1,
+    Position2AttributeType: 2,
+    Position3AttributeType: 3,
+    Position4AttributeType: 4,
+    Position5AttributeType: 5,
+    ActiveSkillWeightPermil: 100,
+    SpecialSkillWeightPermil: 200,
+    SkillStaminaWeightPermil: 300,
+    StaminaRecoveryWeightPermil: 400,
+    BeatDanceWeightPermil: 200,
+    BeatVocalWeightPermil: 400,
+    BeatVisualWeightPermil: 400,
+    QuestPressureId: 'quest_pressure-2',
+    QuestCharacterAdvantageId: '',
+    QuestAudienceAdvantageId: 'quest_audience_advantage_1',
+    MoodType: 0,
+    MaxCapacity: 40000,
+    LiveBonusGroupId: 'live-bonus-group-test',
+    Unlocked: true,
+    Difficulties: [
+      {
+        RaidQuestId: 'marathon-raid-test-quest-raid',
+        DifficultyNumber: 2,
+        DifficultyLevel: 20,
+        MentalThreshold: 10,
+        ClearScore: '26100000',
+        RequiredRaidStamina: 20,
+        HostRewardId: 'rd-host',
+        JoinRewardId: 'rd-join',
+        MvpRewardId: 'rd-mvp',
+        UnlockConditionId: 'unlock-test-2',
+        RewardManagerExp: 0,
+        RewardCardExp: 0,
+        Cleared: false,
+        Unlocked: true,
+        LiveSkipType: 2,
+      },
+      {
+        RaidQuestId: 'marathon-raid-test-quest-raid',
+        DifficultyNumber: 1,
+        DifficultyLevel: 10,
+        MentalThreshold: 10,
+        ClearScore: 100,
+        RequiredRaidStamina: 10,
+        HostRewardId: 'rd-host-1',
+        JoinRewardId: 'rd-join-1',
+        MvpRewardId: 'rd-mvp-1',
+        UnlockConditionId: '',
+        RewardManagerExp: 1,
+        RewardCardExp: 2,
+        Cleared: true,
+        Unlocked: true,
+        LiveSkipType: 2,
+      },
+    ],
+  });
+
+  assert.equal(info?.__msg, RAID_QUEST_MSG);
+  assert.deepEqual(info, {
+    __msg: RAID_QUEST_MSG,
+    Id: 'marathon-raid-test-quest-raid',
+    StageId: 'stage-live-dome-02-02',
+    Name: '協力ライブ',
+    Description: '協力ライブ',
+    UnlockConditionId: 'unlock-test-1',
+    UnlockDescription: 'No.4を1つでもクリアしましょう',
+    MusicId: 'music-test-001',
+    MusicChartPatternId: 'chart-test-001-001',
+    Position1AttributeType: 1,
+    Position2AttributeType: 2,
+    Position3AttributeType: 3,
+    Position4AttributeType: 4,
+    Position5AttributeType: 5,
+    ActiveSkillWeightPermil: 100,
+    SpecialSkillWeightPermil: 200,
+    SkillStaminaWeightPermil: 300,
+    StaminaRecoveryWeightPermil: 400,
+    BeatDanceWeightPermil: 200,
+    BeatVocalWeightPermil: 400,
+    BeatVisualWeightPermil: 400,
+    QuestPressureId: 'quest_pressure-2',
+    QuestCharacterAdvantageId: '',
+    QuestAudienceAdvantageId: 'quest_audience_advantage_1',
+    MoodType: 0,
+    MaxCapacity: 40000,
+    LiveBonusGroupId: 'live-bonus-group-test',
+    Unlocked: true,
+    Difficulties: [
+      {
+        __msg: RAID_QUEST_DIFFICULTY_MSG,
+        RaidQuestId: 'marathon-raid-test-quest-raid',
+        DifficultyNumber: 1,
+        DifficultyLevel: 10,
+        MentalThreshold: 10,
+        ClearScore: 100,
+        RequiredRaidStamina: 10,
+        HostRewardId: 'rd-host-1',
+        JoinRewardId: 'rd-join-1',
+        MvpRewardId: 'rd-mvp-1',
+        UnlockConditionId: '',
+        RewardManagerExp: 1,
+        RewardCardExp: 2,
+        Cleared: true,
+        Unlocked: true,
+        LiveSkipType: 2,
+      },
+      {
+        __msg: RAID_QUEST_DIFFICULTY_MSG,
+        RaidQuestId: 'marathon-raid-test-quest-raid',
+        DifficultyNumber: 2,
+        DifficultyLevel: 20,
+        MentalThreshold: 10,
+        ClearScore: 26100000,
+        RequiredRaidStamina: 20,
+        HostRewardId: 'rd-host',
+        JoinRewardId: 'rd-join',
+        MvpRewardId: 'rd-mvp',
+        UnlockConditionId: 'unlock-test-2',
+        RewardManagerExp: 0,
+        RewardCardExp: 0,
+        Cleared: false,
+        Unlocked: true,
+        LiveSkipType: 2,
+      },
+    ],
+  });
+});
+
+test('raid quest: missing optional fields default to empty string, zero and false', () => {
+  const info = buildRaidQuestInfo({ Id: 'marathon-raid-test-quest-raid' });
+  const difficulties = info?.Difficulties as unknown[] | undefined;
+  assert.equal(difficulties?.length ?? -1, 0);
+  assert.equal(info?.Name, '');
+  assert.equal(info?.MusicId, '');
+  assert.equal(info?.MaxCapacity, 0);
+  assert.equal(info?.Unlocked, false);
+});
+
+test('raid quest: 0/1 numbers from the structured JSON coerce to booleans', () => {
+  const info = buildRaidQuestInfo({
+    Id: 'marathon-raid-test-quest-raid',
+    Unlocked: 1,
+    Difficulties: [{ DifficultyNumber: 1, Cleared: 1, Unlocked: 0 }],
+  });
+  assert.equal(info?.Unlocked, true);
+  const difficulty = info?.Difficulties?.[0] as Record<string, unknown> | undefined;
+  assert.equal(difficulty?.Cleared, true);
+  assert.equal(difficulty?.Unlocked, false);
+});
+
+const LADDER_INFO_MSG = 'Solis.Common.Proto.Api.LadderInfo';
+
+test('ladder point item candidate: date suffix of the marathon id, empty without one', () => {
+  assert.equal(ladderPointItemIdCandidate('mini-marathon-raid-23-1226'), 'item-ladder_pt_23-1226-raid');
+  assert.equal(ladderPointItemIdCandidate('marathon-22-0526'), 'item-ladder_pt_22-0526-raid');
+  assert.equal(ladderPointItemIdCandidate('no-suffix'), '');
+});
+
+test('raid stamina recovery item candidate: stem plus raid-stamina_recovery plus suffix', () => {
+  assert.equal(
+    raidStaminaRecoveryItemIdCandidate('mini-marathon-raid-23-1226'),
+    'item-mini-marathon-raid_raid-stamina_recovery-23-1226',
+  );
+  assert.equal(raidStaminaRecoveryItemIdCandidate('no-suffix'), '');
+});
+
+const EVENT_MISSION_FOR_LADDER = {
+  __msg: EVENT_MISSION_MSG,
+  Id: 'event-ladder-test',
+  Unlocked: true,
+  UserMissions: [],
+} as Record<string, unknown>;
+
+test('ladder info: maps the marathon fields and reuses the event mission info', () => {
+  const info = buildLadderInfo({
+    marathonId: 'mini-marathon-raid-23-1226',
+    name: 'ミニマラソン 協力ライブ',
+    startTime: 1000,
+    endTime: 2000,
+    assetId: 'event-mini-marathon-raid-23-1226',
+    ladderPointItemId: 'item-ladder_pt_23-1226-raid',
+    eventMissionInfo: EVENT_MISSION_FOR_LADDER,
+  });
+  assert.deepEqual(info, {
+    __msg: LADDER_INFO_MSG,
+    Id: 'ladder-mini-marathon-raid-23-1226',
+    Name: 'ミニマラソン 協力ライブ',
+    StartTime: 1000,
+    EndTime: 2000,
+    MessageGroupId: '',
+    CostumeIds: [],
+    LadderPointItemId: 'item-ladder_pt_23-1226-raid',
+    AssetId: 'event-mini-marathon-raid-23-1226',
+    TopColorCode: '',
+    BottomColorCode: '',
+    BgmAssetId: '',
+    BackgroundAssetId: '',
+    EventMissionInfo: EVENT_MISSION_FOR_LADDER,
+  });
+  assert.equal(info.EventMissionInfo, EVENT_MISSION_FOR_LADDER);
+});
+
+test('ladder info: empty ladder point item and no event mission are omitted', () => {
+  const info = buildLadderInfo({
+    marathonId: 'mini-marathon-raid-23-1226',
+    name: 'テスト',
+    startTime: 0,
+    endTime: 0,
+    assetId: '',
+    ladderPointItemId: '',
+  });
+  assert.equal(info.LadderPointItemId, '');
+  assert.equal('EventMissionInfo' in info, false);
+  assert.deepEqual(info.CostumeIds, []);
+});
+
+test('raid marathon fields: type 2 sets LadderInfo and the raid stamina placeholders', () => {
+  const fields = buildRaidMarathonInfoFields({
+    type: 2,
+    marathonId: 'mini-marathon-raid-23-1226',
+    name: 'ミニマラソン 協力ライブ',
+    startTime: 1000,
+    endTime: 2000,
+    assetId: 'event-mini-marathon-raid-23-1226',
+    eventMissionInfo: EVENT_MISSION_FOR_LADDER,
+    ladderPointItemId: 'item-ladder_pt_23-1226-raid',
+    raidStaminaRecoveryItemId: 'item-mini-marathon-raid_raid-stamina_recovery-23-1226',
+  });
+  assert.equal(fields.LadderInfo?.__msg, LADDER_INFO_MSG);
+  assert.equal(fields.LadderInfo?.Id, 'ladder-mini-marathon-raid-23-1226');
+  assert.equal((fields.LadderInfo?.EventMissionInfo as Record<string, unknown>), EVENT_MISSION_FOR_LADDER);
+  assert.equal(fields.RaidStaminaRecoveryItemId, 'item-mini-marathon-raid_raid-stamina_recovery-23-1226');
+  assert.equal(fields.InitialRaidStamina, INITIAL_RAID_STAMINA);
+  assert.equal(fields.RaidStaminaRecoveryMinutes, RAID_STAMINA_RECOVERY_MINUTES);
+  assert.equal(fields.RaidLimitHours, RAID_LIMIT_HOURS);
+  assert.equal(fields.RaidRequiredPointFriendDiscountRatePermil, RAID_REQUIRED_POINT_FRIEND_DISCOUNT_RATE_PERMIL);
+  assert.equal(fields.InitialRaidStamina, 3);
+  assert.equal(fields.RaidStaminaRecoveryMinutes, 60);
+  assert.equal(fields.RaidLimitHours, 1);
+  assert.equal(fields.RaidRequiredPointFriendDiscountRatePermil, 0);
+});
+
+test('raid marathon fields: absent master items give empty item ids', () => {
+  const fields = buildRaidMarathonInfoFields({
+    type: 2,
+    marathonId: 'mini-marathon-raid-23-1226',
+    name: 'テスト',
+    startTime: 0,
+    endTime: 0,
+    assetId: '',
+    ladderPointItemId: '',
+    raidStaminaRecoveryItemId: '',
+  });
+  assert.equal(fields.LadderInfo?.LadderPointItemId, '');
+  assert.equal('RaidStaminaRecoveryItemId' in fields, false);
+});
+
+test('raid marathon fields: type 1 marathon gets no LadderInfo and no raid stamina fields', () => {
+  const fields = buildRaidMarathonInfoFields({
+    type: 1,
+    marathonId: 'marathon-22-0526',
+    name: 'マラソン',
+    startTime: 0,
+    endTime: 0,
+    assetId: '',
+    ladderPointItemId: '',
+    raidStaminaRecoveryItemId: '',
+  });
+  assert.deepEqual(fields, {});
+  assert.equal('LadderInfo' in fields, false);
+  assert.equal('InitialRaidStamina' in fields, false);
+  assert.equal('RaidStaminaRecoveryMinutes' in fields, false);
+  assert.equal('RaidLimitHours' in fields, false);
+  assert.equal('RaidRequiredPointFriendDiscountRatePermil' in fields, false);
+  assert.equal('RaidStaminaRecoveryItemId' in fields, false);
 });

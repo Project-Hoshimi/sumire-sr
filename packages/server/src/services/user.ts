@@ -12,6 +12,7 @@ import {
   putElements,
   listElements,
   putSingleton,
+  getSingleton,
   readPlayerBalance,
   replaceElements,
 } from './playerState.ts';
@@ -23,9 +24,10 @@ import { applyGrants } from '../master/reward.ts';
 import { isSandbox } from '../profile.ts';
 import { withPlayerTx } from '../db/tx.ts';
 import { reconcileNarrative } from './narrative.ts';
-import { SANDBOX_HIERARCHY_DETAIL_GRADE_ID, SANDBOX_HIERARCHY_POINT } from '../profiles/sandbox/hierarchy.ts';
+import { applyRaceStoryOverride } from './race/storyOverride.ts';
 import { sandboxUserCompany } from '../profiles/sandbox/company.ts';
 import { managerLevel, unlockManagerLevelPhotoAbilities } from './photoGen.ts';
+import { ensureDefaultFavoriteCharacters } from './profileDefaults.ts';
 
 const RESPONSE_MSG = 'Solis.Common.Proto.Api.UserGetResponse';
 const UPDATED_DATA_MSG = 'Solis.Common.Proto.Api.UpdatedData';
@@ -90,6 +92,22 @@ register('User:Get', async (ctx) => {
   } as Decoded;
 
   const { collections, singletons, seeded, served } = await loadOrSeed(pl.id, out);
+
+  // The race board soft-locks when the profile has no favourite idol. Seed
+  // three random main idols from the owned roster before the response is
+  // assembled, so the very first User:Get already carries them. A failure here
+  // must never fail User:Get.
+  try {
+    const seededFavorites = await withPlayerTx(pl.id, (tx) =>
+      ensureDefaultFavoriteCharacters(pl.id, tx),
+    );
+    if (seededFavorites) {
+      singletons.Profile = (await getSingleton(pl.id, 'Profile')) ?? singletons.Profile;
+    }
+  } catch (err) {
+    ctx.fastifyReq.log.error({ err }, 'user get: default favourite characters failed');
+  }
+
   for (const [field, val] of Object.entries(collections)) out[field] = val;
   for (const [field, val] of Object.entries(singletons)) out[field] = val;
 
@@ -244,14 +262,6 @@ register('User:Get', async (ctx) => {
   // Tasks are not implemented in sandbox; without missions the Task button has no badge.
   if (isSandbox()) {
     out.Missions = [];
-    // Show every sandbox player at the top Venus ranking grade (BIG4).
-    out.Hierarchy = {
-      __msg: 'Solis.Common.Proto.Transaction.UserHierarchy',
-      ...(out.Hierarchy ?? {}),
-      BestDetailGradeId: SANDBOX_HIERARCHY_DETAIL_GRADE_ID,
-      CurrentFixedPoint: SANDBOX_HIERARCHY_POINT,
-      BestTotalPoint: SANDBOX_HIERARCHY_POINT,
-    };
     // Max office (company) rank; see profiles/sandbox/company.ts.
     out.Company = sandboxUserCompany(out.Company);
     // Every story episode is open to Story Photos; no Shoot Unlock Ticket needed.
@@ -260,6 +270,12 @@ register('User:Get', async (ctx) => {
     for (const s of changedStories) s.IsUseActivatePhotoShootingStoryTicket = true;
     if (changedStories.length > 0) await putElements(pl.id, 'Stories', changedStories);
     out.Stories = stories;
+  }
+  // Race re-runs: an event-story episode read in an earlier run is served as
+  // Unread until it is read in the current run. Only the response changes; the
+  // stored rows keep their real StatusType.
+  if (Array.isArray(out.Stories)) {
+    out.Stories = await applyRaceStoryOverride(pl.id, out.Stories as Decoded[]);
   }
   return out;
 });

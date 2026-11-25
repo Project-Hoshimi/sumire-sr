@@ -68,13 +68,15 @@ export function namePrefix(name: string): string {
 
 /**
  * Every regular file below `dir`. Symlinks and junctions are not followed, so a
- * walk never leaves the directories it was given.
+ * walk never leaves the directories it was given. A missing directory (ENOENT) yields
+ * nothing: an empty or not-yet-created store is not an error, but any other problem is.
  */
 async function* walkFiles(dir: string): AsyncGenerator<{ path: string; size: number }> {
   let entries;
   try {
     entries = await readdir(dir, { withFileTypes: true });
   } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return;
     throw new Error(`cannot read directory ${dir}: ${(err as Error).message}`);
   }
   for (const e of entries) {
@@ -205,27 +207,33 @@ async function copyVerified(src: string, dest: string, size: number, md5: string
   const hash = createHash('md5');
   let written = 0;
   const out = await open(tmp, 'wx');
+  let committed = false;
   try {
-    for await (const chunk of createReadStream(src)) {
-      const b = chunk as Buffer;
-      hash.update(b);
-      written += b.length;
-      await out.write(b);
+    try {
+      for await (const chunk of createReadStream(src)) {
+        const b = chunk as Buffer;
+        hash.update(b);
+        written += b.length;
+        // write() may write fewer bytes than asked; keep going until the chunk is out.
+        for (let offset = 0; offset < b.length; ) {
+          offset += (await out.write(b, offset, b.length - offset)).bytesWritten;
+        }
+      }
+    } catch (err) {
+      return `read failed: ${(err as Error).message}`;
     }
-  } catch (err) {
-    await out.close();
-    await unlink(tmp).catch(() => {});
-    return `read failed: ${(err as Error).message}`;
+    const digest = hash.digest('hex');
+    const reason = written !== size ? `size ${written}, manifest ${size}` : digest !== md5 ? 'md5 mismatch' : null;
+    if (reason !== null) return reason;
+    await rename(tmp, dest);
+    committed = true;
+    return null;
+  } finally {
+    await out.close().catch(() => {});
+    // Never leak the temp file, whatever failed above (rename included); a failed
+    // unlink is ignored because the copy already failed for a more useful reason.
+    if (!committed) await unlink(tmp).catch(() => {});
   }
-  await out.close();
-  const digest = hash.digest('hex');
-  const reason = written !== size ? `size ${written}, manifest ${size}` : digest !== md5 ? 'md5 mismatch' : null;
-  if (reason) {
-    await unlink(tmp).catch(() => {});
-    return reason;
-  }
-  await rename(tmp, dest);
-  return null;
 }
 
 export async function importStore(opts: ImportOptions): Promise<ImportResult> {
@@ -584,7 +592,7 @@ export async function main(argv: string[], env: NodeJS.ProcessEnv = process.env,
         await writeAtomic(values.report, Buffer.from(JSON.stringify(r, null, 2) + '\n'), true);
         out(`  report     ${values.report}`);
       }
-      return r.problems.length > 0 ? 1 : 0;
+      return r.problems.length > 0 || (r.orphans?.length ?? 0) > 0 ? 1 : 0;
     }
 
     throw new UsageError(command ? `unknown command: ${command}` : 'no command');

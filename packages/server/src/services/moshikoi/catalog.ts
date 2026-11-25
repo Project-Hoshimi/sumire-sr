@@ -1,3 +1,7 @@
+// Portions of this file are derived from solis-server
+// (https://github.com/vertesan/solis-server), licensed under AGPL-3.0,
+// and were modified for sumire-sr. See NOTICE.
+
 /**
  * もし恋 (MoshiKoi) catalog: server-owned Love event configuration and the
  * per-event route maps.
@@ -12,6 +16,8 @@
  * and belong to a later stage.
  */
 import { readFileSync } from 'node:fs';
+import { compiledEvent, compiledEvents, registryLoaded } from '../events/registry.ts';
+import type { MoshikoiDraft, MoshikoiRuntime } from './plugin.ts';
 
 /** `penum.LoveBaseType`, stored as a number in the JSON data. */
 export const LOVE_BASE_TYPE = {
@@ -148,11 +154,14 @@ export type MoshikoiErrorCode =
 
 export class MoshikoiError extends Error {
   readonly code: MoshikoiErrorCode;
+  /** Field within the catalog/route JSON that caused the error, when known. */
+  readonly field: string | undefined;
 
-  constructor(code: MoshikoiErrorCode, message: string) {
+  constructor(code: MoshikoiErrorCode, message: string, field?: string) {
     super(message);
     this.name = 'MoshikoiError';
     this.code = code;
+    this.field = field;
   }
 }
 
@@ -176,7 +185,25 @@ export function firstEpisodeId(loveId: string): string {
   return episodeIdPrefix(loveId) + '001';
 }
 
+/**
+ * Served love event ids.
+ *
+ * Once the event registry is loaded the compiled `moshikoi` definitions win
+ * (sorted by authored `startTime`, then id); before that (DB-free tests and
+ * tools) the checked-in file list is used.
+ */
 export function supportedLoveIds(): string[] {
+  if (registryLoaded()) {
+    return compiledEvents()
+      .filter((event) => event.kind === 'moshikoi')
+      .map((event) => ({ id: event.id, runtime: event.runtime as MoshikoiRuntime }))
+      .sort(
+        (a, b) =>
+          a.runtime.config.startTime - b.runtime.config.startTime ||
+          (a.id < b.id ? -1 : a.id > b.id ? 1 : 0),
+      )
+      .map((event) => event.id);
+  }
   return [...SUPPORTED_LOVE_IDS];
 }
 
@@ -186,6 +213,59 @@ const routesCache = new Map<string, Routes>();
 function readJson(kind: 'catalog' | 'routes', loveId: string): unknown {
   const url = new URL(`./${kind}/${loveId}.json`, import.meta.url);
   return JSON.parse(readFileSync(url, 'utf8')) as unknown;
+}
+
+function isSupportedLoveId(loveId: string): boolean {
+  return (SUPPORTED_LOVE_IDS as readonly string[]).includes(loveId);
+}
+
+/** Default draft title: the catalog name and description joined by one space. */
+export function moshikoiDraftTitle(catalog: Record<string, unknown>): string {
+  const parts = [stringValue(catalog.name), stringValue(catalog.description)].filter(
+    (part) => part !== '',
+  );
+  return parts.join(' ');
+}
+
+/** Raw checked-in catalog JSON for `loveId`, without defaults applied. */
+export function loveCatalogJson(loveId: string): Record<string, unknown> {
+  if (!isSupportedLoveId(loveId)) {
+    throw new MoshikoiError('love-event-not-available', 'love event is not available');
+  }
+  const raw = readJson('catalog', loveId);
+  if (!isRecord(raw)) {
+    throw new MoshikoiError('invalid-catalog', `invalid catalog for love event ${loveId}`);
+  }
+  return raw;
+}
+
+/** Raw checked-in route map JSON for `loveId`, without defaults applied. */
+export function loveRoutesJson(loveId: string): Record<string, unknown> {
+  if (!isSupportedLoveId(loveId)) {
+    throw new MoshikoiError('unsupported-love-route', `unsupported love route ${loveId}`);
+  }
+  const raw = readJson('routes', loveId);
+  if (!isRecord(raw)) {
+    throw new MoshikoiError('invalid-route-catalog', `invalid route catalog for ${loveId}`);
+  }
+  return raw;
+}
+
+/**
+ * Every checked-in catalog/routes pair as an event-registry import draft, in
+ * `SUPPORTED_LOVE_IDS` order. Read fresh on each call: the registry import runs
+ * once at boot.
+ */
+export function catalogDrafts(): MoshikoiDraft[] {
+  return SUPPORTED_LOVE_IDS.map((loveId) => {
+    const catalog = loveCatalogJson(loveId);
+    return {
+      id: loveId,
+      title: moshikoiDraftTitle(catalog),
+      catalog,
+      routes: loveRoutesJson(loveId),
+    };
+  });
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -212,16 +292,16 @@ function numberArray(value: unknown): number[] {
   return Array.isArray(value) ? value.map(numberValue) : [];
 }
 
-function numberMap(value: unknown, loveId: string): Record<number, number> {
+function numberMap(value: unknown, loveId: string, field: string): Record<number, number> {
   if (value === undefined || value === null) return {};
   if (!isRecord(value)) {
-    throw new MoshikoiError('invalid-catalog', `invalid catalog for love event ${loveId}`);
+    throw new MoshikoiError('invalid-catalog', `invalid catalog for love event ${loveId}`, field);
   }
   const out: Record<number, number> = {};
   for (const [key, item] of Object.entries(value)) {
     const numericKey = Number(key);
     if (!Number.isInteger(numericKey) || typeof item !== 'number' || !Number.isFinite(item)) {
-      throw new MoshikoiError('invalid-catalog', `invalid catalog for love event ${loveId}`);
+      throw new MoshikoiError('invalid-catalog', `invalid catalog for love event ${loveId}`, field);
     }
     out[numericKey] = item;
   }
@@ -271,23 +351,29 @@ function assertKnownConfigFields(raw: Record<string, unknown>, loveId: string): 
       throw new MoshikoiError(
         'unknown-catalog-field',
         `unknown catalog field ${key} for love event ${loveId}`,
+        key,
       );
     }
   }
   const characters = raw.mainCharacters;
   if (characters === undefined) return;
   if (!Array.isArray(characters)) {
-    throw new MoshikoiError('invalid-catalog', `invalid catalog for love event ${loveId}`);
+    throw new MoshikoiError('invalid-catalog', `invalid catalog for love event ${loveId}`, 'mainCharacters');
   }
   for (const character of characters) {
     if (!isRecord(character)) {
-      throw new MoshikoiError('invalid-heroine-catalog', `invalid heroine catalog for love event ${loveId}`);
+      throw new MoshikoiError(
+        'invalid-heroine-catalog',
+        `invalid heroine catalog for love event ${loveId}`,
+        'mainCharacters',
+      );
     }
     for (const key of Object.keys(character)) {
       if (!(MAIN_CHARACTER_KEYS as readonly string[]).includes(key)) {
         throw new MoshikoiError(
           'unknown-catalog-field',
           `unknown catalog field ${key} for love event ${loveId}`,
+          `mainCharacters.${key}`,
         );
       }
     }
@@ -314,8 +400,8 @@ function normalizeConfig(raw: Record<string, unknown>, loveId: string): EventCon
     lessonMaxHours: numberValue(raw.lessonMaxHours),
     eventMissionIds: stringArray(raw.eventMissionIds),
     limitedEventMissionIds: stringArray(raw.limitedEventMissionIds),
-    episodeUnlockLevels: numberMap(raw.episodeUnlockLevels, loveId),
-    hintUnlockLevels: numberMap(raw.hintUnlockLevels, loveId),
+    episodeUnlockLevels: numberMap(raw.episodeUnlockLevels, loveId, 'episodeUnlockLevels'),
+    hintUnlockLevels: numberMap(raw.hintUnlockLevels, loveId, 'hintUnlockLevels'),
     assetId: stringValue(raw.assetId) || loveId,
     titleAssetId: stringValue(raw.titleAssetId),
     expAssetId: stringValue(raw.expAssetId) || `exp-${loveId}`,
@@ -334,34 +420,32 @@ function normalizeConfig(raw: Record<string, unknown>, loveId: string): EventCon
   };
 }
 
-/** Load and validate one event's server-owned configuration. */
-export function loveConfig(loveId: string): EventConfig {
-  const cached = configCache.get(loveId);
-  if (cached) return cached;
-  if (!(SUPPORTED_LOVE_IDS as readonly string[]).includes(loveId)) {
-    // solis returns gRPC NotFound with this message.
-    throw new MoshikoiError('love-event-not-available', 'love event is not available');
-  }
-  const raw = readJson('catalog', loveId);
+/**
+ * Pure catalog validation/normalisation: the raw catalog JSON plus the love id
+ * it must describe, returning the runtime `EventConfig` or throwing
+ * `MoshikoiError`. Shared by the file loader and the event plugin so a stored
+ * draft validates exactly like a checked-in file.
+ */
+export function parseEventConfig(raw: unknown, loveId: string): EventConfig {
   if (!isRecord(raw)) {
     throw new MoshikoiError('invalid-catalog', `invalid catalog for love event ${loveId}`);
   }
   assertKnownConfigFields(raw, loveId);
   const config = normalizeConfig(raw, loveId);
 
-  if (
-    config.loveId !== loveId ||
-    config.name === '' ||
-    (config.characterId === '' && config.mainCharacters.length === 0) ||
-    config.storyReadItemId === '' ||
-    (config.presentItemId === '' && config.baseType !== LOVE_BASE_TYPE.EXTRA) ||
-    config.promoteItemId === '' ||
-    config.startTime <= 0 ||
-    config.lessonMaxHours <= 0 ||
-    config.lessonMaxHours > 24 ||
-    (config.baseType !== LOVE_BASE_TYPE.STANDARD && config.baseType !== LOVE_BASE_TYPE.EXTRA)
-  ) {
-    throw new MoshikoiError('invalid-catalog', `invalid catalog for love event ${loveId}`);
+  const invalid = (field: string): never => {
+    throw new MoshikoiError('invalid-catalog', `invalid catalog for love event ${loveId}`, field);
+  };
+  if (config.loveId !== loveId) invalid('loveId');
+  if (config.name === '') invalid('name');
+  if (config.characterId === '' && config.mainCharacters.length === 0) invalid('characterId');
+  if (config.storyReadItemId === '') invalid('storyReadItemId');
+  if (config.presentItemId === '' && config.baseType !== LOVE_BASE_TYPE.EXTRA) invalid('presentItemId');
+  if (config.promoteItemId === '') invalid('promoteItemId');
+  if (config.startTime <= 0) invalid('startTime');
+  if (config.lessonMaxHours <= 0 || config.lessonMaxHours > 24) invalid('lessonMaxHours');
+  if (config.baseType !== LOVE_BASE_TYPE.STANDARD && config.baseType !== LOVE_BASE_TYPE.EXTRA) {
+    invalid('baseType');
   }
 
   const seenCharacters = new Set<string>();
@@ -373,11 +457,40 @@ export function loveConfig(loveId: string): EventConfig {
       heroine.color === '' ||
       seenCharacters.has(heroine.characterId)
     ) {
-      throw new MoshikoiError('invalid-heroine-catalog', `invalid heroine catalog for love event ${loveId}`);
+      throw new MoshikoiError(
+        'invalid-heroine-catalog',
+        `invalid heroine catalog for love event ${loveId}`,
+        'mainCharacters',
+      );
     }
     seenCharacters.add(heroine.characterId);
   }
 
+  return config;
+}
+
+/**
+ * Load and validate one event's server-owned configuration.
+ *
+ * Once the event registry is loaded the compiled `moshikoi` definition wins;
+ * before that (DB-free tests and tools) the checked-in files are read. Caches
+ * are only used on the file path, so publishing is visible immediately.
+ */
+export function loveConfig(loveId: string): EventConfig {
+  if (registryLoaded()) {
+    const runtime = compiledEvent<MoshikoiRuntime>('moshikoi', loveId);
+    if (!runtime) {
+      // solis returns gRPC NotFound with this message.
+      throw new MoshikoiError('love-event-not-available', 'love event is not available');
+    }
+    return runtime.config;
+  }
+  const cached = configCache.get(loveId);
+  if (cached) return cached;
+  if (!isSupportedLoveId(loveId)) {
+    throw new MoshikoiError('love-event-not-available', 'love event is not available');
+  }
+  const config = parseEventConfig(readJson('catalog', loveId), loveId);
   configCache.set(loveId, config);
   return config;
 }
@@ -578,15 +691,8 @@ function validateRoutes(routes: Routes, loveId: string): void {
   }
 }
 
-/** Load and validate one event's route map. */
-export function loveRoutes(loveId: string): Routes {
-  const cached = routesCache.get(loveId);
-  if (cached) return cached;
-  if (!(SUPPORTED_LOVE_IDS as readonly string[]).includes(loveId)) {
-    throw new MoshikoiError('unsupported-love-route', `unsupported love route ${loveId}`);
-  }
-
-  const raw = readJson('routes', loveId);
+/** Pure route-map parsing/validation/normalisation used by the plugin too. */
+export function parseEventRoutes(raw: unknown, loveId: string): Routes {
   if (!isRecord(raw)) {
     throw new MoshikoiError('invalid-route-catalog', `invalid route catalog for ${loveId}`);
   }
@@ -627,6 +733,29 @@ export function loveRoutes(loveId: string): Routes {
     endingConditions,
   };
   validateRoutes(routes, loveId);
+  return routes;
+}
+
+/**
+ * Load and validate one event's route map.
+ *
+ * Registry-first like `loveConfig`: compiled `moshikoi` definitions win once the
+ * event registry is loaded, checked-in files are the fallback.
+ */
+export function loveRoutes(loveId: string): Routes {
+  if (registryLoaded()) {
+    const runtime = compiledEvent<MoshikoiRuntime>('moshikoi', loveId);
+    if (!runtime) {
+      throw new MoshikoiError('love-event-not-available', 'love event is not available');
+    }
+    return runtime.routes;
+  }
+  const cached = routesCache.get(loveId);
+  if (cached) return cached;
+  if (!isSupportedLoveId(loveId)) {
+    throw new MoshikoiError('unsupported-love-route', `unsupported love route ${loveId}`);
+  }
+  const routes = parseEventRoutes(readJson('routes', loveId), loveId);
   routesCache.set(loveId, routes);
   return routes;
 }

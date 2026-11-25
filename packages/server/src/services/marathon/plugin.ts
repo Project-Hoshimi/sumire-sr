@@ -7,8 +7,21 @@
  * `catalog.ts`; a draft may additionally carry an authored `schedule`, which is
  * import/export data for the phase-2 builder.
  */
+import {
+  getBoxGacha,
+  getEventMission,
+  getEventStoryByAssetId,
+  getRaidQuestByMarathonId,
+  listExistingItemIds,
+  listMarathonBoxGachaSettings,
+} from '../../master/index.ts';
 import { rosterById } from '../rosters/cache.ts';
 import { boxRateBudget } from './box.ts';
+import {
+  deriveMarathonDraft,
+  questUnlockItemCandidates,
+  staminaRecoveryItemCandidates,
+} from './importDraft.ts';
 import type { BoxItemDef, CompiledBoxDef, CompiledBoxItemDef } from './box.ts';
 import {
   registerEventPlugin,
@@ -577,15 +590,47 @@ function defaultDraft(eventId: string): MarathonDraft {
   };
 }
 
+/**
+ * Draft for an existing event id, with every event-level field derived from
+ * master data (see `deriveMarathonDraft`): the marathon type, event/banner
+ * asset ids, box gacha group, stamina/unlock items and event mission.
+ *
+ * TODO(phase 2): import stages, box contents and NPC rosters from the master
+ * rows. `listMarathonQuests(eventId)` exists in `src/master/index.ts`, but the
+ * catalog draft has no stage-level field to store its rows in yet.
+ */
 async function importFromMaster(eventId: string): Promise<MarathonDraft> {
-  // TODO(phase 2): import stages, box contents and NPC rosters from the master
-  // rows. `listMarathonQuests(eventId)` exists in `src/master/index.ts`, but the
-  // catalog draft has no stage-level field to store its rows in yet, so this
-  // returns the event-level skeleton that compiles today.
-  return defaultDraft(eventId);
+  const eventAssetId = `event-${eventId}`;
+  const [eventStory, eventMission, boxGachaSettings, raidQuest] = await Promise.all([
+    getEventStoryByAssetId(eventAssetId),
+    getEventMission(eventAssetId),
+    listMarathonBoxGachaSettings(eventId),
+    getRaidQuestByMarathonId(eventId),
+  ]);
+
+  // `MarathonBoxGachaSetting` rows point at `BoxGacha` rows, which carry the
+  // group id the marathon runtime config expects.
+  const firstBoxGachaId = String(boxGachaSettings[0]?.BoxGachaId ?? '');
+  const boxGacha = firstBoxGachaId === '' ? null : await getBoxGacha(firstBoxGachaId);
+  const existingItemIds = await listExistingItemIds([
+    ...staminaRecoveryItemCandidates(eventId),
+    ...questUnlockItemCandidates(eventId),
+  ]);
+
+  return deriveMarathonDraft(eventId, {
+    eventStoryAssetIdExists: eventStory !== null,
+    eventMission: eventMission === null ? null : { name: String(eventMission.Name ?? '') },
+    raidQuestName: raidQuest === null ? null : String(raidQuest.Name ?? ''),
+    boxGachaGroupId: String(boxGacha?.BoxGachaGroupId ?? ''),
+    existingItemIds,
+  });
 }
 
-/** Starting draft for a new admin-created definition: request id and title. */
+/**
+ * Starting draft for a new admin-created definition: request id and title.
+ * `EventPlugin.defaultDraft` is synchronous, so it cannot read master rows;
+ * `importFromMaster` performs the derivation for existing event ids.
+ */
 function defaultDraftFor(id: string, title: string): MarathonDraft {
   return { ...defaultDraft(id), name: title };
 }

@@ -119,8 +119,8 @@ export type OctoEntry = OctoAsset & { objectName: string; state: number };
 /**
  * Index the database (`Database`: 1 revision, 2 assetBundleList, 4 resourceList, 5 urlFormat;
  * `Data`: 3 name, 4 size, 9 state, 10 md5, 11 objectName, 12 generation, 13 uploadVersion).
- * Entries without an objectName or a valid MD5 are skipped. A later entry with the same
- * objectName replaces an earlier one.
+ * Entries without an objectName or a valid MD5 are skipped, and one warning reports how
+ * many were dropped. A later entry with the same objectName replaces an earlier one.
  */
 export function indexOctoDatabase(database: Uint8Array): {
   revision: number;
@@ -130,6 +130,7 @@ export function indexOctoDatabase(database: Uint8Array): {
   const entries = new Map<string, OctoEntry>();
   let revision = 0;
   let urlFormat = '';
+  let skipped = 0;
   const str = (b: Uint8Array, f: Field) => Buffer.from(b.subarray(f.valueStart, f.end)).toString('utf8');
   for (const f of fields(database)) {
     if (f.number === 1 && f.wire === 0) revision = Number(f.varint);
@@ -155,8 +156,13 @@ export function indexOctoDatabase(database: Uint8Array): {
       }
       if (objectName && MD5_RE.test(md5)) {
         entries.set(objectName, { name, md5, size, kind, generation, uploadVersion, objectName, state });
+      } else {
+        skipped++;
       }
     }
+  }
+  if (skipped > 0) {
+    console.warn(`octo database: skipped ${skipped} entries without a usable objectName or MD5`);
   }
   return { revision, entries, urlFormat };
 }

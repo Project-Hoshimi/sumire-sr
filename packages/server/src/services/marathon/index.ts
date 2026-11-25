@@ -13,8 +13,11 @@ import { register } from '../handlers.ts';
 import { accountOf, commonResponse, playerForAccount } from '../activity.ts';
 import { db } from '../../db/client.ts';
 import { withPlayerTx } from '../../db/tx.ts';
-import { listMarathonBoxGachaSettings, listMarathonQuests } from '../../master/index.ts';
 import {
+  getRaidQuestByMarathonId,
+  listMarathonBoxGachaSettings,
+  listMarathonQuests,
+} from '../../master/index.ts';import {
   marathonConfig,
   marathonWindowFor,
   openMarathons,
@@ -25,7 +28,15 @@ import { currentStamina, loadMarathonState, type MarathonState } from './state.t
 import { liveBonusInfos } from './liveBonus.ts';
 import { buildBoxGachaInfo, marathonPoints } from './boxInfo.ts';
 import { buildMarathonQuestInfo } from './questInfo.ts';
-import { buildEventStoryInfo, loadMarathonEventStory, marathonEventMissionInfo } from './eventInfo.ts';
+import {
+  buildEventStoryInfo,
+  buildRaidMarathonInfoFields,
+  buildRaidQuestInfo,
+  loadMarathonEventStory,
+  marathonEventMissionInfo,
+  resolveRaidMarathonItemIds,
+  type RaidQuestRow,
+} from './eventInfo.ts';
 import { ConditionEvaluator } from '../conditions.ts';
 
 const UPDATED_DATA_MSG = 'Solis.Common.Proto.Api.UpdatedData';
@@ -33,6 +44,8 @@ const EVENT_INFO_MSG = 'Solis.Common.Proto.Api.HomeEventInfo';
 const HOME_MARATHON_INFO_MSG = 'Solis.Common.Proto.Api.HomeMarathonInfo';
 const MARATHON_INFO_MSG = 'Solis.Common.Proto.Api.MarathonInfo';
 const USER_MARATHON_INFO_MSG = 'Solis.Common.Proto.Api.UserMarathonInfo';
+// Solis.Common.Proto.MarathonType_Raid (see plugin.ts MarathonConfig.type).
+const MARATHON_TYPE_RAID = 2;
 
 /**
  * Advertise the open authored events on Home:Enter, under every profile.
@@ -122,6 +135,34 @@ register('Marathon:Top', async (ctx) => {
       marathonEventMissionInfo(player.id, config, tx),
     ),
   } as Decoded;
+
+  // Raid marathons serve their quest (stage, music, 20 difficulties) through
+  // MarathonInfo.RaidQuest; the client has no RaidQuest master partition. They
+  // also need MarathonInfo.LadderInfo (the client dereferences it without a
+  // null check in MarathonTopScreenPresenter.InitializeAsync) and the raid
+  // stamina fields. The four raid stamina numbers are placeholders: IPR master
+  // has no source for them.
+  if (config.type === MARATHON_TYPE_RAID) {
+    const raidRow = await getRaidQuestByMarathonId(marathonId);
+    const raidQuestInfo = buildRaidQuestInfo(raidRow as RaidQuestRow | null);
+    if (raidQuestInfo) marathonInfo.RaidQuest = raidQuestInfo;
+
+    const raidItemIds = await resolveRaidMarathonItemIds(config.id);
+    Object.assign(
+      marathonInfo,
+      buildRaidMarathonInfoFields({
+        type: config.type,
+        marathonId: config.id,
+        name: config.name,
+        startTime: window.startTime,
+        endTime: window.endTime,
+        assetId: config.assetId,
+        eventMissionInfo: marathonInfo.EventMissionInfo as Decoded | undefined,
+        ladderPointItemId: raidItemIds.ladderPointItemId,
+        raidStaminaRecoveryItemId: raidItemIds.raidStaminaRecoveryItemId,
+      }),
+    );
+  }
 
   const stamina = currentStamina(state, config, now);
   const unlockEvaluator = new ConditionEvaluator(player.id, now, db);

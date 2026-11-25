@@ -1,3 +1,7 @@
+// Portions of this file are derived from solis-server
+// (https://github.com/vertesan/solis-server), licensed under AGPL-3.0,
+// and were modified for sumire-sr. See NOTICE.
+
 import { and, desc, eq } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { register } from './handlers.ts';
@@ -916,6 +920,11 @@ async function validateOwnedPhotoStyles(
   }
 }
 
+/** MV musics carry their own staging, so the client sends no PhotoStageId. */
+export function isStagelessPhotoMusic(musicId: string): boolean {
+  return musicId.startsWith('music-mv-');
+}
+
 async function checkPhotoShooting(
   request: Decoded | null | undefined,
   exec: Executor,
@@ -941,15 +950,18 @@ async function checkPhotoShooting(
     const musicId = String(request?.PhotoMusicId ?? '');
     const stageId = String(request?.PhotoStageId ?? '');
     if (!musicId) throw new Error('photoMusicId is required');
-    if (!stageId) throw new Error('photoStageId is required');
     if (!(await getPhotoQuestMusic(musicId))) throw new Error(`photo music not found ${musicId}`);
-    if (!(await getPhotoStage(stageId))) throw new Error(`photo stage not found ${stageId}`);
     const music = catalog.musics.find((m) => m.id === musicId);
     if (!music) throw new Error(`photo music ${musicId} is not viewable`);
     if (!music.unlocked) throw new Error(`photo music ${musicId} is locked`);
-    const stage = catalog.stages.find((s) => s.id === stageId);
-    if (!stage) throw new Error(`photo stage ${stageId} is not viewable`);
-    if (!stage.unlocked) throw new Error(`photo stage ${stageId} is locked`);
+    if (stageId) {
+      if (!(await getPhotoStage(stageId))) throw new Error(`photo stage not found ${stageId}`);
+      const stage = catalog.stages.find((s) => s.id === stageId);
+      if (!stage) throw new Error(`photo stage ${stageId} is not viewable`);
+      if (!stage.unlocked) throw new Error(`photo stage ${stageId} is locked`);
+    } else if (!isStagelessPhotoMusic(musicId)) {
+      throw new Error('photoStageId is required');
+    }
   } else {
     throw new Error(`unsupported photo shooting action type ${actionType}`);
   }
@@ -1623,10 +1635,16 @@ register(
       let eventName = '';
       let musicId: string | undefined;
       if (actionType === 3) {
-        const stage = await getPhotoStage(String(ctx.request?.PhotoStageId ?? ''));
-        placeName = String(stage?.Name ?? '');
-        eventName = 'ライブ';
         musicId = String(ctx.request?.PhotoMusicId ?? '');
+        const stageId = String(ctx.request?.PhotoStageId ?? '');
+        if (stageId) {
+          const stage = await getPhotoStage(stageId);
+          placeName = String(stage?.Name ?? '');
+        } else {
+          const music = await getPhotoQuestMusic(musicId);
+          placeName = String(music?.Name ?? '');
+        }
+        eventName = 'ライブ';
       } else {
         const activity = await getPhotoActivity(String(ctx.request?.PhotoActivityId ?? ''));
         placeName = String(activity?.Name ?? '');

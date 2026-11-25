@@ -7,6 +7,7 @@ import type { ConditionEvaluator } from '../conditions.ts';
 import type { MarathonState } from './state.ts';
 import {
   marathonDifficultyConditionMet,
+  marathonQuestAccess,
   marathonQuestClearConditionDifficulty,
   marathonQuestClearConditionTarget,
 } from './unlock.ts';
@@ -138,4 +139,23 @@ test('non-cd conditions do not fall back to cleared state', async () => {
     await marathonDifficultyConditionMet('player', 'quest', 'clearQuest-1', state, undefined, evaluatorSatisfied(false)),
     false,
   );
+});
+
+test('an item-gated quest is unlockable without owning the unlock items', async () => {
+  const state: MarathonState = { stamina: 0, staminaUpdatedTime: 0, quests: {} };
+  const quest = { Id: 'quest-1', UnlockConditionId: null, RequiredUnlockItemAmount: 500 };
+  const access = await marathonQuestAccess(
+    'player',
+    quest,
+    { questUnlockItemId: 'unlock-item' },
+    state,
+    undefined,
+    evaluatorSatisfied(true),
+  );
+  assert.deepEqual(access, {
+    conditionMet: true,
+    requiredAmount: 500,
+    unlocked: false,
+    unlockable: true,
+  });
 });

@@ -274,6 +274,27 @@
       "when": 1794980521518,
       "tag": "0040_event_builder_admin",
       "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1795038313716,
+      "tag": "0041_yielding_madelyne_pryor",
+      "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1795069920705,
+      "tag": "0042_race_master",
+      "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1795072363605,
+      "tag": "0043_race_panel_reward_key",
+      "breakpoints": true
     }
   ]
 }

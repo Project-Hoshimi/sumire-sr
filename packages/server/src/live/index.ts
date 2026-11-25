@@ -1,3 +1,7 @@
+// Portions of this file are derived from solis-server
+// (https://github.com/vertesan/solis-server), licensed under AGPL-3.0,
+// and were modified for sumire-sr. See NOTICE.
+
 // Public API of the TypeScript port of Solis internal/makino/live.
 //
 // Pure: no database, no HTTP, no filesystem. The caller supplies master rows,
