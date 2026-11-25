@@ -22,7 +22,23 @@ import {
   listResourceNames,
   listRewardsByIds,
   listSkills,
+  getEventStoryByAssetId,
 } from '../master/index.ts';
+import {
+  buildRaceBoardPreview,
+  setRaceBoardRewardPanelKeys,
+  setRaceBoardVenusQuestIds,
+  venusQuestIdsOf,
+  type RaceBoardSource,
+} from '../services/race/boardPreview.ts';
+import {
+  listRaceAreaIds,
+  listRacePanelsByAreas,
+  listRacePanelRewards,
+  listRaceQuestDifficultiesFor,
+  listRaceQuests,
+} from '../services/race/master.ts';
+import { raceEventAssetId } from '../services/race/types.ts';
 import {
   parseInlineRewardRef,
   resourceTypeSnakeName,
@@ -200,7 +216,7 @@ export interface LookupLiveBonusGroup {
   found: boolean;
 }
 
-/** One resource type that appears in some reward. */
+/** One resource type that appears in some reward or can be granted. */
 export interface LookupRewardType {
   resourceType: number;
   typeLabel: string;
@@ -210,6 +226,12 @@ export interface LookupRewardType {
   count: number;
   /** True when `applyGrants` can deliver this type (SUPPORTED_GRANT_TYPES). */
   grantable: boolean;
+  /**
+   * True when the type is grantable but has no name-table rows, so there is no
+   * resource id to pick and the inline reference uses an empty id
+   * (`rd_auto;paid_stone;;100`). Always false for non-grantable types.
+   */
+  idless: boolean;
 }
 
 /** A name-table row, used by the custom-reward browser. */
@@ -237,6 +259,16 @@ export interface AdminLookupOptions {
   loadCards?: () => Promise<LookupCardSource[]>;
   loadItems?: () => Promise<LookupItemSource[]>;
   loadQuests?: (eventId: string) => Promise<LookupQuestSource[]>;
+  /**
+   * Raw board rows of one race (areas in draft order, panels, VENUS quests and
+   * their difficulty tiers, panel rewards). The route builds the preview and
+   * resolves reward contents itself.
+   */
+  loadRaceBoard?: (
+    raceId: string,
+    areaIds: string[],
+    difficultyNumber: number,
+  ) => Promise<RaceBoardSource>;
   /** Distinct marathon ids from the quest and box-gacha tables. */
   loadMarathons?: () => Promise<LookupMarathonSource[]>;
   /** Ids of every stored event definition (not cached; checked per request). */
@@ -324,7 +356,51 @@ async function loadMarathonsFromMaster(): Promise<LookupMarathonSource[]> {
   return listMasterMarathons();
 }
 
-async function loadRewardRowsFromMaster(ids: string[]): Promise<LookupRewardRow[]> {
+/**
+ * Board rows of one race. `areaIds` is the draft's area order (empty falls back
+ * to every area of the race); `difficultyNumber` picks the VENUS tier shown per
+ * panel. Only the VENUS panel quests get their difficulty tiers loaded.
+ */
+async function loadRaceBoardFromMaster(
+  raceId: string,
+  areaIds: string[],
+  difficultyNumber: number,
+): Promise<RaceBoardSource> {
+  const orderedAreas = areaIds.length > 0 ? areaIds : await listRaceAreaIds(raceId);
+  const [panels, quests, story] = await Promise.all([
+    listRacePanelsByAreas(orderedAreas),
+    listRaceQuests(raceId),
+    getEventStoryByAssetId(raceEventAssetId(raceId)),
+  ]);
+  const rewardIds = [
+    ...new Set(
+      panels
+        .map((panel) => String(panel.RacePanelRewardId ?? ''))
+        .filter((id) => id !== ''),
+    ),
+  ];
+  const venusQuestIds = [
+    ...new Set(
+      panels
+        .filter((panel) => Number(panel.Type ?? 0) === 3 && panel.RaceQuestId != null)
+        .map((panel) => String(panel.RaceQuestId)),
+    ),
+  ];
+  const [panelRewards, difficulties] = await Promise.all([
+    listRacePanelRewards(raceId, rewardIds),
+    listRaceQuestDifficultiesFor(venusQuestIds),
+  ]);
+  return {
+    raceId,
+    areaIds: orderedAreas,
+    panels,
+    quests,
+    difficulties,
+    panelRewards,
+    eventStoryId: story == null ? null : String(story.Id ?? '') || null,
+    difficultyNumber,
+  };
+}async function loadRewardRowsFromMaster(ids: string[]): Promise<LookupRewardRow[]> {
   const rows = await listRewardsByIds(ids);
   return rows.map((row) => ({ id: row.Id, resources: resourceRows(row.Resources) }));
 }
@@ -761,6 +837,7 @@ export const adminLookupRoutes: FastifyPluginAsync<AdminLookupOptions> = async (
   };
 
   const loadRewardRows = opts.loadRewardRows ?? loadRewardRowsFromMaster;
+  const loadRaceBoard = opts.loadRaceBoard ?? loadRaceBoardFromMaster;
   const loadAllRewardRows = cached(
     opts.loadAllRewards ?? loadAllRewardRowsFromMaster,
     now,
@@ -909,6 +986,74 @@ export const adminLookupRoutes: FastifyPluginAsync<AdminLookupOptions> = async (
     return rows.map(withQuestNames);
   });
 
+  app.get('/sumire/admin/lookup/race-board', { preHandler: viewer }, async (req, reply) => {
+    const { eventId, areas, difficulty } = req.query as {
+      eventId?: unknown;
+      areas?: unknown;
+      difficulty?: unknown;
+    };
+    if (typeof eventId !== 'string' || eventId === '') {
+      return reply.code(400).send({ error: 'eventId is required' });
+    }
+    if (!isValidAdminId(eventId)) {
+      return reply.code(400).send({ error: 'invalid eventId' });
+    }
+    const areaIds = typeof areas === 'string' ? parseIdList(areas) : [];
+    if (areaIds.length > LOOKUP_IDS_MAX) {
+      return reply.code(400).send({ error: `at most ${LOOKUP_IDS_MAX} areas` });
+    }
+    if (!areaIds.every((areaId) => isValidAdminId(areaId))) {
+      return reply.code(400).send({ error: 'invalid area id' });
+    }
+    let difficultyNumber = 1;
+    if (difficulty !== undefined && difficulty !== '') {
+      const value = typeof difficulty === 'string' ? Number(difficulty) : Number.NaN;
+      if (!Number.isInteger(value) || value <= 0) {
+        return reply.code(400).send({ error: 'invalid difficulty' });
+      }
+      difficultyNumber = value;
+    }
+
+    const source = await loadRaceBoard(eventId, areaIds, difficultyNumber);
+    await ensureTranslationsLoaded();
+    const preview = buildRaceBoardPreview(source);
+    // `validate` is synchronous and the draft carries no board, so keep this
+    // race's VENUS panel quests around for the roster-override warnings.
+    setRaceBoardVenusQuestIds(eventId, venusQuestIdsOf(preview));
+    // Same snapshot for the reward panels, so `validate` can reject a
+    // `panelRewards` override aimed at a panel that never grants a reward.
+    setRaceBoardRewardPanelKeys(
+      eventId,
+      preview.areas.flatMap((area) =>
+        area.panels
+          .filter((panel) => panel.type === 2)
+          .map((panel) => `${area.areaId}:${panel.number}`),
+      ),
+    );
+
+    const rewardIds = [
+      ...new Set(
+        preview.areas.flatMap((area) =>
+          area.panels.map((panel) => panel.rewardId ?? '').filter((id) => id !== ''),
+        ),
+      ),
+    ];
+    if (rewardIds.length > 0) {
+      const resolved = await resolveRewards(rewardIds, loadRewardRows);
+      const rewardById = new Map(
+        (await describeRewards(resolved, loadNames)).map((reward) => [reward.id, reward]),
+      );
+      for (const area of preview.areas) {
+        for (const panel of area.panels) {
+          if (panel.rewardId !== null) {
+            panel.reward = rewardById.get(panel.rewardId) ?? null;
+          }
+        }
+      }
+    }
+    return preview;
+  });
+
   app.get('/sumire/admin/lookup/marathons', { preHandler: viewer }, async () => {
     const [rows, eventIds] = await Promise.all([loadMarathons(), loadEventIds()]);
     const defined = new Set(eventIds);
@@ -979,15 +1124,34 @@ export const adminLookupRoutes: FastifyPluginAsync<AdminLookupOptions> = async (
         counts.set(resourceType, (counts.get(resourceType) ?? 0) + 1);
       }
     }
-    return [...counts.entries()]
-      .sort((a, b) => a[0] - b[0])
-      .map(([resourceType, count]) => ({
-        resourceType,
-        typeLabel: resourceTypeLabel(resourceType),
-        snakeName: resourceTypeSnakeName(resourceType),
-        count,
-        grantable: SUPPORTED_GRANT_TYPES.has(resourceType),
-      })) satisfies LookupRewardType[];
+    // Grantable types that no master reward uses yet (currencies, for example)
+    // still belong in the palette so the custom tab can compose them. A type
+    // with no snake name cannot be composed, so it is left out.
+    for (const resourceType of SUPPORTED_GRANT_TYPES) {
+      if (counts.has(resourceType)) continue;
+      if (resourceTypeSnakeName(resourceType) === null) continue;
+      counts.set(resourceType, 0);
+    }
+    const rows = await Promise.all(
+      [...counts.entries()]
+        .sort((a, b) => a[0] - b[0])
+        .map(async ([resourceType, count]) => {
+          const grantable = SUPPORTED_GRANT_TYPES.has(resourceType);
+          // Only grantable types are composed, so only they need the check.
+          const idless = grantable
+            ? (await loadResources(resourceType)).length === 0
+            : false;
+          return {
+            resourceType,
+            typeLabel: resourceTypeLabel(resourceType),
+            snakeName: resourceTypeSnakeName(resourceType),
+            count,
+            grantable,
+            idless,
+          };
+        }),
+    );
+    return rows satisfies LookupRewardType[];
   });
 
   app.get('/sumire/admin/lookup/resources', { preHandler: viewer }, async (req, reply) => {

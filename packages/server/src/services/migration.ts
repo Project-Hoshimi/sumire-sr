@@ -43,7 +43,9 @@ const ONETIME_TTL_MS = 10 * 60 * 1000;
 const RATE_WINDOW_MS = 15 * 60 * 1000;
 const RATE_MAX_FAILURES = 5;
 
-const INVALID_CREDENTIALS_MESSAGE = message('invalidCredentials');
+// One dialog for both unknown-id and wrong-password failures: the client must
+// not be able to tell the two apart.
+const ID_OR_PASSWORD_INCORRECT_MESSAGE = message('idOrPasswordIncorrect');
 const OWN_ACCOUNT_MESSAGE = message('ownAccount');
 const RATE_LIMITED_MESSAGE = message('rateLimited');
 const EXPIRED_TOKEN_MESSAGE = message('expiredToken');
@@ -155,11 +157,13 @@ register('Migration:MigratePassword', async (ctx) => {
   const matched = verifyPassword(password, credential?.passwordHash ?? DUMMY_PASSWORD_HASH);
   if (!acct || !credential || !matched) {
     recordFailure(keys, now);
+    // Unknown id, missing credentials and a wrong password share one client
+    // response; only the server-side log line tells them apart.
     logOutcome(ctx, seedId, false, !acct ? 'unknown-account' : !credential ? 'no-credentials' : 'wrong-password');
     throw new AppRpcError(
       ERROR_CODE.PASSWORD_MIGRATION_FAILED,
       MIGRATION_ERROR_ACTION,
-      INVALID_CREDENTIALS_MESSAGE,
+      ID_OR_PASSWORD_INCORRECT_MESSAGE,
     );
   }
 

@@ -10,7 +10,6 @@ import { db } from '../../db/client.ts';
 import type { Executor } from '../../db/tx.ts';
 import { getMarathonQuest } from '../../master/index.ts';
 import { ConditionEvaluator } from '../conditions.ts';
-import { getItemAmount } from '../inventory.ts';
 import type { MarathonConfig } from './catalog.ts';
 import type { MarathonState } from './state.ts';
 
@@ -122,8 +121,12 @@ export interface MarathonQuestAccess {
  * - `conditionMet`: the master unlock condition holds.
  * - `requiredAmount`: unlock items the quest costs (0 when it has no item gate).
  * - `unlocked`: the condition holds and the item gate is paid (or absent).
- * - `unlockable`: the condition holds, the item gate is unpaid, an unlock item
- *   is configured and the player owns enough of it.
+ * - `unlockable`: the condition holds, the item gate is unpaid and an unlock
+ *   item is configured. Affordability is not part of it: the client shows the
+ *   item cost itself, and treating an unaffordable item-gated quest with no
+ *   `UnlockConditionId` as not unlockable makes the client look up an empty
+ *   unlock condition and crash (`NullReferenceException` in
+ *   `MarathonLiveQuestGridListItemModel..ctor`).
  */
 export async function marathonQuestAccess(
   playerId: string,
@@ -147,11 +150,7 @@ export async function marathonQuestAccess(
   const paid = requiredAmount <= 0 || state.unlockedQuests?.[questId] === true;
   const unlocked = conditionMet && paid;
 
-  const unlockable =
-    conditionMet &&
-    !paid &&
-    config.questUnlockItemId !== '' &&
-    (await getItemAmount(playerId, config.questUnlockItemId, exec)) >= requiredAmount;
+  const unlockable = conditionMet && !paid && config.questUnlockItemId !== '';
 
   return { conditionMet, requiredAmount, unlocked, unlockable };
 }

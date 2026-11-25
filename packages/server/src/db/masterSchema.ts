@@ -1422,6 +1422,49 @@ export const masterMarathonQuestDifficulty = pgTable(
   ],
 );
 
+// Raid (協力ライブ) quest master data. The client has no RaidQuest master
+// partition: raid quests reach it through `MarathonInfo.RaidQuest`, so this
+// table is the API-side source. A row id is the marathon id plus `-quest-raid`.
+// `Difficulties` keeps the authored difficulty array verbatim (jsonb); the
+// per-difficulty reward/stamina fields are not decoded into columns because the
+// API mapping is the only consumer.
+export const masterRaidQuest = pgTable(
+  'master_RaidQuest',
+  {
+    Id: text('Id').notNull(),
+    StageId: text('StageId'),
+    MusicId: text('MusicId'),
+    MusicChartPatternId: text('MusicChartPatternId'),
+    QuestPressureId: text('QuestPressureId'),
+    QuestAudienceAdvantageId: text('QuestAudienceAdvantageId'),
+    LiveBonusGroupId: text('LiveBonusGroupId'),
+    QuestCharacterAdvantageId: text('QuestCharacterAdvantageId'),
+    Position1AttributeType: bigint('Position1AttributeType', { mode: 'number' }),
+    Position2AttributeType: bigint('Position2AttributeType', { mode: 'number' }),
+    Position3AttributeType: bigint('Position3AttributeType', { mode: 'number' }),
+    Position4AttributeType: bigint('Position4AttributeType', { mode: 'number' }),
+    Position5AttributeType: bigint('Position5AttributeType', { mode: 'number' }),
+    ActiveSkillWeightPermil: bigint('ActiveSkillWeightPermil', { mode: 'number' }),
+    SpecialSkillWeightPermil: bigint('SpecialSkillWeightPermil', { mode: 'number' }),
+    SkillStaminaWeightPermil: bigint('SkillStaminaWeightPermil', { mode: 'number' }),
+    StaminaRecoveryWeightPermil: bigint('StaminaRecoveryWeightPermil', { mode: 'number' }),
+    BeatDanceWeightPermil: bigint('BeatDanceWeightPermil', { mode: 'number' }),
+    BeatVocalWeightPermil: bigint('BeatVocalWeightPermil', { mode: 'number' }),
+    BeatVisualWeightPermil: bigint('BeatVisualWeightPermil', { mode: 'number' }),
+    MaxCapacity: bigint('MaxCapacity', { mode: 'number' }),
+    MentalThreshold: bigint('MentalThreshold', { mode: 'number' }),
+    LiveSkipType: bigint('LiveSkipType', { mode: 'number' }),
+    MoodType: bigint('MoodType', { mode: 'number' }),
+    Name: text('Name'),
+    Description: text('Description'),
+    UnlockConditionId: text('UnlockConditionId'),
+    UnlockDescription: text('UnlockDescription'),
+    Difficulties: jsonb('Difficulties'),
+    Unlocked: boolean('Unlocked'),
+  },
+  (t) => [uniqueIndex('master_raid_quest_id_idx').on(t.Id)],
+);
+
 export const masterMarathonLiveBonus = pgTable(
   'master_MarathonLiveBonus',
   {
@@ -1443,6 +1486,126 @@ export const masterMarathonLiveBonusGroup = pgTable(
   (t) => [
     uniqueIndex('master_marathon_live_bonus_group_key_idx').on(t.GroupId, t.LiveBonusId),
   ],
+);
+
+// Race (レース) event master data. The board is authored as `RacePanel` rows
+// keyed by (RaceAreaId, Number): a race's areas are the distinct area ids that
+// carry one of its `race-qt-<suffix>-*` panel quests, and every panel row of an
+// area counts toward `RaceAreaInfo.PanelCount`.
+export const masterRaceLiveBonus = pgTable(
+  'master_RaceLiveBonus',
+  {
+    Id: text('Id').notNull(),
+    Level: bigint('Level', { mode: 'number' }).notNull(),
+    LiveAbilityId: text('LiveAbilityId'),
+    LiveAbilityLevel: bigint('LiveAbilityLevel', { mode: 'number' }),
+    PowerPermil: bigint('PowerPermil', { mode: 'number' }),
+    RequiredRaceMedalAmount: bigint('RequiredRaceMedalAmount', { mode: 'number' }),
+    UnlockConditionId: text('UnlockConditionId'),
+  },
+  (t) => [uniqueIndex('master_race_live_bonus_key_idx').on(t.Id, t.Level)],
+);
+
+export const masterRaceLiveBonusGroup = pgTable(
+  'master_RaceLiveBonusGroup',
+  {
+    GroupId: text('GroupId').notNull(),
+    LiveBonusId: text('LiveBonusId').notNull(),
+    Order: bigint('Order', { mode: 'number' }),
+  },
+  (t) => [uniqueIndex('master_race_live_bonus_group_key_idx').on(t.GroupId, t.LiveBonusId)],
+);
+
+export const masterRacePanel = pgTable(
+  'master_RacePanel',
+  {
+    RaceAreaId: text('RaceAreaId').notNull(),
+    Number: bigint('Number', { mode: 'number' }).notNull(),
+    Type: bigint('Type', { mode: 'number' }),
+    RaceQuestId: text('RaceQuestId'),
+    EventStoryEpisode: bigint('EventStoryEpisode', { mode: 'number' }),
+    RequiredRacePointAmount: bigint('RequiredRacePointAmount', { mode: 'number' }),
+    RacePanelRewardId: text('RacePanelRewardId'),
+  },
+  (t) => [uniqueIndex('master_race_panel_key_idx').on(t.RaceAreaId, t.Number)],
+);
+
+export const masterRacePanelReward = pgTable(
+  'master_RacePanelReward',
+  {
+    Id: text('Id').notNull(),
+    RaceId: text('RaceId'),
+    RewardId: text('RewardId'),
+  },
+  // Master data repeats a reward id once per race that uses it, so the id is
+  // only unique together with the owning race.
+  (t) => [uniqueIndex('master_race_panel_reward_key_idx').on(t.Id, t.RaceId)],
+);
+
+// Race quests carry no race id column: a race owns the quests whose id starts
+// with `race-qt-<race suffix>-`. `ActivityLessonRewardType` marks the pt (1) and
+// medal (2) area quests; panel quests leave it null.
+export const masterRaceQuest = pgTable(
+  'master_RaceQuest',
+  {
+    Id: text('Id').notNull(),
+    GroupId: text('GroupId'),
+    Name: text('Name'),
+    Description: text('Description'),
+    Order: bigint('Order', { mode: 'number' }),
+    MusicId: text('MusicId'),
+    MusicChartPatternId: text('MusicChartPatternId'),
+    Position1AttributeType: bigint('Position1AttributeType', { mode: 'number' }),
+    Position2AttributeType: bigint('Position2AttributeType', { mode: 'number' }),
+    Position3AttributeType: bigint('Position3AttributeType', { mode: 'number' }),
+    Position4AttributeType: bigint('Position4AttributeType', { mode: 'number' }),
+    Position5AttributeType: bigint('Position5AttributeType', { mode: 'number' }),
+    ActiveSkillWeightPermil: bigint('ActiveSkillWeightPermil', { mode: 'number' }),
+    SpecialSkillWeightPermil: bigint('SpecialSkillWeightPermil', { mode: 'number' }),
+    SkillStaminaWeightPermil: bigint('SkillStaminaWeightPermil', { mode: 'number' }),
+    StaminaRecoveryWeightPermil: bigint('StaminaRecoveryWeightPermil', { mode: 'number' }),
+    BeatDanceWeightPermil: bigint('BeatDanceWeightPermil', { mode: 'number' }),
+    BeatVocalWeightPermil: bigint('BeatVocalWeightPermil', { mode: 'number' }),
+    BeatVisualWeightPermil: bigint('BeatVisualWeightPermil', { mode: 'number' }),
+    QuestPressureId: text('QuestPressureId'),
+    QuestCharacterAdvantageId: text('QuestCharacterAdvantageId'),
+    QuestAudienceAdvantageId: text('QuestAudienceAdvantageId'),
+    MoodType: bigint('MoodType', { mode: 'number' }),
+    ActivityLessonRewardType: bigint('ActivityLessonRewardType', { mode: 'number' }),
+    LiveSkipType: bigint('LiveSkipType', { mode: 'number' }),
+    UnlockConditionId: text('UnlockConditionId'),
+  },
+  (t) => [uniqueIndex('master_race_quest_id_idx').on(t.Id)],
+);
+
+export const masterRaceQuestDifficulty = pgTable(
+  'master_RaceQuestDifficulty',
+  {
+    RaceQuestId: text('RaceQuestId').notNull(),
+    DifficultyNumber: bigint('DifficultyNumber', { mode: 'number' }).notNull(),
+    DifficultyLevel: bigint('DifficultyLevel', { mode: 'number' }),
+    MentalThreshold: bigint('MentalThreshold', { mode: 'number' }),
+    ClearScore: bigint('ClearScore', { mode: 'number' }),
+    UnlockConditionId: text('UnlockConditionId'),
+    UnlockDescription: text('UnlockDescription'),
+    StageId: text('StageId'),
+    MaxCapacity: bigint('MaxCapacity', { mode: 'number' }),
+    LiveBonusGroupId: text('LiveBonusGroupId'),
+  },
+  (t) => [
+    uniqueIndex('master_race_quest_difficulty_key_idx').on(t.RaceQuestId, t.DifficultyNumber),
+  ],
+);
+
+export const masterRaceRankingReward = pgTable(
+  'master_RaceRankingReward',
+  {
+    RankGradeId: text('RankGradeId').notNull(),
+    Type: bigint('Type', { mode: 'number' }).notNull(),
+    RankFrom: bigint('RankFrom', { mode: 'number' }).notNull(),
+    RewardId: text('RewardId'),
+  },
+  (t) => [uniqueIndex('master_race_ranking_reward_key_idx').on(t.RankGradeId, t.Type, t.RankFrom)],
 );
 
 // Home-screen talks. `ConditionId` points at `master_Condition`; the sandbox

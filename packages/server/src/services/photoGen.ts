@@ -1,3 +1,7 @@
+// Portions of this file are derived from solis-server
+// (https://github.com/vertesan/solis-server), licensed under AGPL-3.0,
+// and were modified for sumire-sr. See NOTICE.
+
 import { eq } from 'drizzle-orm';
 import { db } from '../db/client.ts';
 import type { Executor } from '../db/tx.ts';

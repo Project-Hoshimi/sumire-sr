@@ -129,6 +129,10 @@ export function put<T>(path: string, body?: unknown): Promise<T> {
   return api<T>('PUT', path, body);
 }
 
+export function patch<T>(path: string, body?: unknown): Promise<T> {
+  return api<T>('PATCH', path, body);
+}
+
 /** DELETE has no body; 204 resolves to `undefined`. */
 export function del<T = void>(path: string): Promise<T> {
   return api<T>('DELETE', path);

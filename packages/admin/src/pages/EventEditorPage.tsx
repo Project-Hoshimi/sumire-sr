@@ -3,6 +3,7 @@ import type { FormEvent } from 'react';
 import { ApiError, del, get, post, put } from '../api.ts';
 import { ConfirmDialog } from '../components/ConfirmDialog.tsx';
 import { ErrorBanner } from '../components/ErrorBanner.tsx';
+import { JsonDraftEditor } from '../components/JsonDraftEditor.tsx';
 import { MarathonIdBrowser } from '../components/MarathonIdBrowser.tsx';
 import { ItemNameHint, LiveBonusGroupSummary, RewardSummary } from '../components/ResourceBadge.tsx';
 import { ResourceLookupPicker } from '../components/ResourceLookupPicker.tsx';
@@ -25,6 +26,10 @@ import {
   type StoredNpcRosters,
 } from '../draft.ts';
 import { boxHasInfiniteItems, boxRateBudget, formatRate, impliedItemRate } from '../boxRates.ts';
+import { MOSHIKOI_TABS, MoshikoiTabContent, isMoshikoiTab } from './moshikoi/MoshikoiEditor.tsx';
+import { RaceBoardTab } from './race/RaceBoardTab.tsx';
+import { RaceSettingsTab } from './race/RaceSettingsTab.tsx';
+import { asEditorDraft, asMoshikoiDraft, moshikoiDraftFromUnknown } from './moshikoi/moshikoi.ts';
 import { roleAtLeast } from '../role.ts';
 import { navigate } from '../router.ts';
 import { takePublishNotice } from '../publishNotice.ts';
@@ -44,7 +49,20 @@ import type {
   ValidationIssue,
 } from '../types.ts';
 
-type Tab = 'settings' | 'schedule' | 'stages' | 'boxes';
+/**
+ * Tabs the editor can show. The marathon kinds use the first four; a moshikoi
+ * love event swaps stages/boxes for its own documents (see MOSHIKOI_TABS).
+ */
+type Tab =
+  | 'settings'
+  | 'board'
+  | 'schedule'
+  | 'stages'
+  | 'boxes'
+  | 'catalog'
+  | 'routes'
+  | 'endings'
+  | 'json';
 
 /** What the open in-page confirmation will do once confirmed. */
 type PendingConfirm =
@@ -100,6 +118,9 @@ interface ScheduleDraftRow {
   exchangeEndsAt: string;
   enabled: boolean;
 }
+
+/** Kinds the create form can request; `moshikoi` love events are permanent. */
+type EventCreateKind = 'marathon' | 'moshikoi' | 'race';
 
 /** Server errors carry `{ errors: string[] }` on validation failures. */
 function describeError(error: unknown): string {
@@ -220,6 +241,8 @@ export function EventEditorPage({ id, user }: { id: string; user: AdminSessionUs
   const [draft, setDraft] = useState<MarathonDraftShape | null>(null);
   const [savedJson, setSavedJson] = useState('');
   const [tab, setTab] = useState<Tab>('settings');
+  /** Parse error in a race draft's JSON editor; a save is blocked while set. */
+  const [raceJsonError, setRaceJsonError] = useState<string | null>(null);
   const [issues, setIssues] = useState<ValidationIssue[]>([]);
   const [scheduleRows, setScheduleRows] = useState<ScheduleDraftRow[]>([]);
   const [warnings, setWarnings] = useState<string[]>([]);
@@ -260,6 +283,7 @@ export function EventEditorPage({ id, user }: { id: string; user: AdminSessionUs
     setNumberErrors({});
     setBoxRateText(null);
     setBoxRateError(null);
+    setRaceJsonError(null);
     setDeleteOpen(false);
     setDeleteText('');
     setDeleteError(null);
@@ -277,11 +301,26 @@ export function EventEditorPage({ id, user }: { id: string; user: AdminSessionUs
             ),
           );
         }
-        const parsed = draftFromUnknown(next.draft);
+        // A moshikoi draft is two verbatim documents; the marathon reader would
+        // add every field it owns (boxes, rosters, stamina) and a save would
+        // write those back. Read it as-is instead. A race draft is read the same
+        // way, so saving it never writes back fields the race kind does not own.
+        const parsed =
+          next.kind === 'moshikoi'
+            ? asEditorDraft(moshikoiDraftFromUnknown(next.draft))
+            : next.kind === 'race'
+              ? (next.draft as unknown as MarathonDraftShape)
+              : draftFromUnknown(next.draft);
         setDetail(next);
+        // A permanent kind has no schedule tab; never leave it selected.
+        // A race draft has no stage or box tabs, so it also opens on Settings.
+        if (next.lifecycle === 'permanent' || next.kind === 'moshikoi' || next.kind === 'race') {
+          setTab('settings');
+        }
         setDraft(parsed);
         setSavedJson(JSON.stringify(parsed));
-        storedRosters.current = storedNpcRosters(next.draft);
+        storedRosters.current =
+          next.kind === 'race' ? { present: false, value: undefined } : storedNpcRosters(next.draft);
         stagesEdited.current = false;
         setScheduleRows(scheduleRowsOf(next.schedule));
       })
@@ -313,6 +352,25 @@ export function EventEditorPage({ id, user }: { id: string; user: AdminSessionUs
       cancelled = true;
     };
   }, [tab, stagesLoaded, id]);
+
+  useEffect(() => {
+    // A race's Settings form uses the same roster list the marathon Stages tab
+    // does (the versus NPC picker), so load it as soon as a race is open.
+    if (detail?.kind !== 'race' || stagesLoaded) return;
+    let cancelled = false;
+    get<RosterSummary[]>('/rosters')
+      .then((nextRosters) => {
+        if (cancelled) return;
+        setRosters(nextRosters);
+        setStagesLoaded(true);
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) setError(describeError(err));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [detail?.kind, stagesLoaded]);
 
   const dirty = draft !== null && JSON.stringify(draft) !== savedJson;
   /** True while a rate input holds text the draft cannot accept. */
@@ -377,7 +435,7 @@ export function EventEditorPage({ id, user }: { id: string; user: AdminSessionUs
     const rewards = new Set<string>();
     const groups = new Set<string>();
     if (draft !== null) {
-      for (const box of Object.values(draft.boxGachas)) {
+      for (const box of Object.values(draft.boxGachas ?? {})) {
         for (const item of box.items) {
           if (item.itemType === 2) {
             if (item.liveBonusGroupId !== undefined && item.liveBonusGroupId !== '') {
@@ -700,8 +758,13 @@ export function EventEditorPage({ id, user }: { id: string; user: AdminSessionUs
 
   async function handleSave(): Promise<boolean> {
     if (draft === null || !canEdit) return false;
-    if (invalidRatePending) return false;
-    const prepared = withPendingNumbers(draft);
+    if (invalidRatePending || raceJsonError !== null) return false;
+    // A race draft is saved exactly as the JSON editor left it: no marathon
+    // number merge and no npcRosters handling.
+    const isRace = detail?.kind === 'race';
+    const prepared = isRace
+      ? { draft, errors: {} as Record<string, string> }
+      : withPendingNumbers(draft);
     if (Object.keys(prepared.errors).length > 0) {
       setNumberErrors(prepared.errors);
       setMessage(null);
@@ -714,7 +777,9 @@ export function EventEditorPage({ id, user }: { id: string; user: AdminSessionUs
     setError(null);
     setMessage(null);
     // Preserve the stored table until a stage is edited; see draftSavePayload.
-    const payload = draftSavePayload(prepared.draft, storedRosters.current, stagesEdited.current);
+    const payload = isRace
+      ? prepared.draft
+      : draftSavePayload(prepared.draft, storedRosters.current, stagesEdited.current);
     try {
       const result = await put<SaveDraftResponse>(`/events/${encodeURIComponent(id)}/draft`, {
         draft: payload,
@@ -826,6 +891,8 @@ export function EventEditorPage({ id, user }: { id: string; user: AdminSessionUs
 
   async function handleSaveSchedule(): Promise<void> {
     if (!canPublish) return;
+    // Permanent kinds have no schedule rows; the server rejects a PUT with 400.
+    if (detail?.lifecycle === 'permanent') return;
     const checked = validateScheduleRows(scheduleRows);
     setScheduleErrors(checked.errors);
     if (checked.errors.some((entry) => entry !== null)) return;
@@ -883,6 +950,30 @@ export function EventEditorPage({ id, user }: { id: string; user: AdminSessionUs
 
   if (detail === null || draft === null) return <p className="loading">Loading event…</p>;
 
+  /** Permanent kinds (e.g. moshikoi) never have schedule rows. */
+  const permanent = detail.lifecycle === 'permanent';
+  /**
+   * A moshikoi love event stores catalog/routes documents instead of marathon
+   * stages and boxes, so those tabs are not shown at all.
+   */
+  const moshikoi = detail.kind === 'moshikoi';
+  /** A race draft has no marathon stages or boxes; it keeps its own tabs. */
+  const race = detail.kind === 'race';
+  const tabs: { id: Tab; label: string }[] = moshikoi
+    ? [{ id: 'settings', label: 'Settings' }, ...MOSHIKOI_TABS]
+    : race
+      ? [
+          { id: 'settings', label: 'Settings' },
+          { id: 'board', label: 'Board' },
+          ...(permanent ? [] : [{ id: 'schedule' as Tab, label: 'Schedule' }]),
+          { id: 'json', label: 'JSON' },
+        ]
+      : TABS.filter(
+          (entry) =>
+            (!race || (entry.id !== 'stages' && entry.id !== 'boxes')) &&
+            (!permanent || entry.id !== 'schedule'),
+        );
+
   const confirmCopy = pendingConfirm === null ? null : pendingConfirmText(pendingConfirm);
 
   // A lookup only applies to the exact id set it was fetched for; anything else
@@ -903,7 +994,7 @@ export function EventEditorPage({ id, user }: { id: string; user: AdminSessionUs
       : null;
 
   const stageQuests = [...quests];
-  for (const questId of Object.keys(draft.npcRosters)) {
+  for (const questId of Object.keys(draft.npcRosters ?? {})) {
     if (!stageQuests.some((quest) => quest.id === questId)) {
       stageQuests.push({ id: questId, name: null, nameEn: null, order: null });
     }
@@ -929,7 +1020,7 @@ export function EventEditorPage({ id, user }: { id: string; user: AdminSessionUs
           </button>
           <button
             type="button"
-            disabled={!canEdit || busy || !dirty || invalidRatePending}
+            disabled={!canEdit || busy || !dirty || invalidRatePending || raceJsonError !== null}
             onClick={() => void handleSave()}
           >
             Save draft
@@ -937,6 +1028,9 @@ export function EventEditorPage({ id, user }: { id: string; user: AdminSessionUs
           {invalidRatePending ? (
             <span className="field-error">Fix invalid rates before saving</span>
           ) : null}
+          {raceJsonError === null ? null : (
+            <span className="field-error">Fix the draft JSON before saving</span>
+          )}
           <button
             type="button"
             disabled={!canPublish || busy || invalidRatePending}
@@ -1031,20 +1125,34 @@ export function EventEditorPage({ id, user }: { id: string; user: AdminSessionUs
         </p>
       ))}
 
-      <div className="tabs" role="tablist">
-        {TABS.map((entry) => (
-          <button
-            key={entry.id}
-            type="button"
-            role="tab"
-            aria-selected={tab === entry.id}
-            className={tab === entry.id ? 'tab active' : 'tab'}
-            onClick={() => setTab(entry.id)}
-          >
-            {entry.label}
-          </button>
-        ))}
+      <div className="tabs-row">
+        <div className="tabs" role="tablist">
+          {tabs.map((entry) => (
+            <button
+              key={entry.id}
+              type="button"
+              role="tab"
+              aria-selected={tab === entry.id}
+              className={tab === entry.id ? 'tab active' : 'tab'}
+              onClick={() => setTab(entry.id)}
+            >
+              {entry.label}
+            </button>
+          ))}
+        </div>
+        {/* Live ops only has player state once a race version exists. */}
+        {race && detail.publishedVersion > 0 ? (
+          <a className="tab-link" href={`#/events/${encodeURIComponent(id)}/players`}>
+            Players (live ops)
+          </a>
+        ) : null}
       </div>
+
+      {permanent ? (
+        <p className="notice">
+          Permanent event: no schedule. Publishing makes changes live in the Love menu.
+        </p>
+      ) : null}
 
       {issues.length > 0 ? (
         <div className="issues" role="status">
@@ -1066,7 +1174,42 @@ export function EventEditorPage({ id, user }: { id: string; user: AdminSessionUs
         </div>
       ) : null}
 
-      {tab === 'settings' ? (
+      {tab === 'settings' && race ? (
+        <RaceSettingsTab
+          draft={draft}
+          schema={schema}
+          issues={issues}
+          canEdit={canEdit}
+          rosters={rosters}
+          onChange={changeDraft}
+        />
+      ) : null}
+
+      {tab === 'board' && race ? (
+        <RaceBoardTab
+          draft={draft}
+          canEdit={canEdit}
+          rosters={rosters}
+          onChange={changeDraft}
+        />
+      ) : null}
+
+      {tab === 'json' && race ? (
+        <div className="panel">
+          <p className="muted">
+            The whole race draft as stored. The Settings form and this JSON view write the same
+            draft; invalid JSON blocks saving until it parses again.
+          </p>
+          <JsonDraftEditor
+            value={draft}
+            disabled={!canEdit}
+            onValid={(next) => changeDraft(next as MarathonDraftShape)}
+            onError={setRaceJsonError}
+          />
+        </div>
+      ) : null}
+
+      {tab === 'settings' && !race ? (
         <div className="panel">
           <p className="muted">
             Fields the marathon plugin marks read-only are shown disabled; they change only by
@@ -1154,6 +1297,16 @@ export function EventEditorPage({ id, user }: { id: string; user: AdminSessionUs
             })}
           </div>
         </div>
+      ) : null}
+
+      {moshikoi && isMoshikoiTab(tab) ? (
+        <MoshikoiTabContent
+          tab={tab}
+          draft={asMoshikoiDraft(draft)}
+          issues={issues}
+          canEdit={canEdit}
+          onChange={(next) => changeDraft(asEditorDraft(next))}
+        />
       ) : null}
 
       {tab === 'schedule' ? (
@@ -1716,6 +1869,8 @@ export function EventListPage({ user }: { user: AdminSessionUser }) {
   const [createOpen, setCreateOpen] = useState(false);
   const [newId, setNewId] = useState('');
   const [newTitle, setNewTitle] = useState('');
+  const [newKind, setNewKind] = useState<EventCreateKind>('marathon');
+  const [importKind, setImportKind] = useState<EventCreateKind>('marathon');
   const [importId, setImportId] = useState('');
   const [busy, setBusy] = useState(false);
   const [marathons, setMarathons] = useState<LookupMarathon[] | null>(null);
@@ -1758,7 +1913,7 @@ export function EventListPage({ user }: { user: AdminSessionUser }) {
     try {
       const detail = await post<EventDetail>('/events', {
         id: newId.trim(),
-        kind: 'marathon',
+        kind: newKind,
         title: newTitle,
       });
       navigate(`/events/${encodeURIComponent(detail.id)}`);
@@ -1775,7 +1930,7 @@ export function EventListPage({ user }: { user: AdminSessionUser }) {
     setError(null);
     try {
       const detail = await post<EventDetail>('/events/import-from-master', {
-        kind: 'marathon',
+        kind: importKind,
         eventId: importId.trim(),
       });
       navigate(`/events/${encodeURIComponent(detail.id)}`);
@@ -1786,8 +1941,19 @@ export function EventListPage({ user }: { user: AdminSessionUser }) {
     }
   }
 
-  const newWarning = newMarathonWarning(newId, marathons);
+  // A moshikoi id is not a marathon id, so the master-data hint does not apply.
+  const newWarning = newKind === 'marathon' ? newMarathonWarning(newId, marathons) : null;
   const importWarning = newMarathonWarning(importId, marathons);
+
+  /** Permanent events sort after scheduled ones, then by id. */
+  const sortedEvents =
+    events === null
+      ? null
+      : [...events].sort((a, b) => {
+          const lifecycle =
+            (a.lifecycle === 'permanent' ? 1 : 0) - (b.lifecycle === 'permanent' ? 1 : 0);
+          return lifecycle === 0 ? a.id.localeCompare(b.id) : lifecycle;
+        });
 
   return (
     <section>
@@ -1815,17 +1981,19 @@ export function EventListPage({ user }: { user: AdminSessionUser }) {
                 required
                 aria-describedby={newWarning === null ? undefined : 'new-event-id-warning'}
               />
-              <button
-                type="button"
-                className="resource-picker-browse"
-                aria-label="Browse new event id"
-                onClick={(event) => {
-                  browseOpenerRef.current = event.currentTarget;
-                  setBrowseTarget('new');
-                }}
-              >
-                Browse
-              </button>
+              {newKind === 'marathon' ? (
+                <button
+                  type="button"
+                  className="resource-picker-browse"
+                  aria-label="Browse new event id"
+                  onClick={(event) => {
+                    browseOpenerRef.current = event.currentTarget;
+                    setBrowseTarget('new');
+                  }}
+                >
+                  Browse
+                </button>
+              ) : null}
             </span>
             {newWarning === null ? null : (
               <span id="new-event-id-warning" className="field-warning">{newWarning}</span>
@@ -1840,7 +2008,22 @@ export function EventListPage({ user }: { user: AdminSessionUser }) {
               required
             />
           </label>
-          <span className="muted">Kind: marathon. The server seeds a default draft.</span>
+          <label>
+            Kind
+            <select
+              value={newKind}
+              onChange={(event) => setNewKind(event.target.value as EventCreateKind)}
+            >
+              <option value="marathon">marathon</option>
+              <option value="moshikoi">moshikoi (permanent)</option>
+              <option value="race">Race (レース)</option>
+            </select>
+          </label>
+          <span className="muted">
+            {newKind === 'marathon'
+              ? 'The server seeds a default draft.'
+              : 'A moshikoi love event is permanent: it has no schedule and is live once published.'}
+          </span>
           <button type="submit" disabled={busy || newId.trim() === ''}>
             Create
           </button>
@@ -1850,7 +2033,7 @@ export function EventListPage({ user }: { user: AdminSessionUser }) {
       {canEdit ? (
         <form className="inline-form" onSubmit={(event) => void handleImport(event)}>
           <div className="field-stack">
-            <label htmlFor="import-event-id">Import marathon event id</label>
+            <label htmlFor="import-event-id">Import {importKind} event id</label>
             <span className="resource-picker-row">
               <input
                 id="import-event-id"
@@ -1877,6 +2060,17 @@ export function EventListPage({ user }: { user: AdminSessionUser }) {
               <span id="import-event-id-warning" className="field-warning">{importWarning}</span>
             )}
           </div>
+          <label>
+            Import kind
+            <select
+              value={importKind}
+              onChange={(event) => setImportKind(event.target.value as EventCreateKind)}
+            >
+              <option value="marathon">marathon</option>
+              <option value="moshikoi">moshikoi (permanent)</option>
+              <option value="race">Race (レース)</option>
+            </select>
+          </label>
           <button type="submit" disabled={busy || importId.trim() === ''}>
             Import from master
           </button>
@@ -1895,9 +2089,9 @@ export function EventListPage({ user }: { user: AdminSessionUser }) {
         }}
       />
 
-      {events === null ? (
+      {sortedEvents === null ? (
         <p className="loading">Loading events…</p>
-      ) : events.length === 0 ? (
+      ) : sortedEvents.length === 0 ? (
         <p>No event definitions yet.</p>
       ) : (
         <table>
@@ -1914,10 +2108,13 @@ export function EventListPage({ user }: { user: AdminSessionUser }) {
             </tr>
           </thead>
           <tbody>
-            {events.map((row) => (
+            {sortedEvents.map((row) => (
               <tr key={row.id}>
                 <td>
-                  <a href={`#/events/${encodeURIComponent(row.id)}`}>{row.id}</a>
+                  <a href={`#/events/${encodeURIComponent(row.id)}`}>{row.id}</a>{' '}
+                  {row.kind === 'race' && row.publishedVersion > 0 ? (
+                    <a href={`#/events/${encodeURIComponent(row.id)}/players`}>players</a>
+                  ) : null}
                 </td>
                 <td>
                   {row.titleEn ?? row.title}
@@ -1927,9 +2124,11 @@ export function EventListPage({ user }: { user: AdminSessionUser }) {
                 <td>{row.publishedVersion === 0 ? 'unpublished' : `v${row.publishedVersion}`}</td>
                 <td>{row.draftDiffersFromPublished ? 'differs' : 'in sync'}</td>
                 <td>
-                  {row.schedule.length === 0
-                    ? 'none'
-                    : `${row.schedule.length} window${row.schedule.length === 1 ? '' : 's'}`}
+                  {row.lifecycle === 'permanent'
+                    ? `Permanent · ${row.publishedVersion === 0 ? 'Draft' : 'Live'}`
+                    : row.schedule.length === 0
+                      ? 'none'
+                      : `${row.schedule.length} window${row.schedule.length === 1 ? '' : 's'}`}
                 </td>
                 <td>
                   {row.updatedAt}{' '}

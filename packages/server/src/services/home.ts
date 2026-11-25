@@ -19,14 +19,15 @@ import {
 import { register } from './handlers.ts';
 import { applyBirthdayToHomeEnter, applyBirthdayToHomeLogin, birthdayLoginFields } from './birthday.ts';
 import { applyActiveMarathonToHomeEnter } from './marathon/index.ts';
+import { applyActiveRaceToHomeEnter } from './race/index.ts';
 import { withPlayerTx } from '../db/tx.ts';
 import { hasReceivableGift, postStarterGifts } from './gift.ts';
 import { accountOf, commonResponse, lessonHomeFields, playerForAccount, reconcileLessonState } from './activity.ts';
 import { activePromotionForHome, promotionInfoForHome } from './activityPromotion.ts';
 import { fanEventInfoForHome, refreshInfoForHome } from './activityCatalog.ts';
 import { ConditionEvaluator } from './conditions.ts';
+import { loadHierarchyStanding } from './hierarchy.ts';
 import { isSandbox } from '../profile.ts';
-import { SANDBOX_HIERARCHY_DETAIL_GRADE_ID, SANDBOX_HIERARCHY_RANK } from '../profiles/sandbox/hierarchy.ts';
 import { db } from '../db/client.ts';
 import { listGachas, master } from '../master/index.ts';
 import { isSandboxBlockedGacha } from '../profiles/sandbox/showcase.ts';
@@ -157,15 +158,32 @@ function applySandboxHomeButtons(body: any): void {
   // friend request count defaults to zero and the caller fills in the real one.
   body.IsRemainingDiary = false;
   body.FriendAppliedCount = 0;
-  // Unclaimed achievement rank rewards light the Task badge; Tasks are blocked too.
+  // Unclaimed VENUS rewards light the Task badge, and Tasks (Mission:List) are
+  // blocked in the sandbox. They stay claimable on the VENUS rank page.
   body.HierarchyNotiInfo = {
     __msg: 'Solis.Common.Proto.Api.HierarchyNotiInfo',
     ...(body.HierarchyNotiInfo ?? {}),
     RewardIds: [],
     DivisionRewardIds: [],
-    // Every sandbox player is shown at the top Venus ranking grade (BIG4).
-    CurrentDetailGradeId: SANDBOX_HIERARCHY_DETAIL_GRADE_ID,
-    CurrentRank: SANDBOX_HIERARCHY_RANK,
+  };
+}
+
+/**
+ * Report the player's real VENUS grade/rank. The sandbox used to show every
+ * player at BIG4 rank 1; that display override is gone and every profile now
+ * serves the computed standing (reward lists are left as applied above).
+ */
+async function applyPlayerHierarchyNoti(
+  body: any,
+  pl: { id: string } | null | undefined,
+): Promise<void> {
+  if (!pl) return;
+  const standing = await loadHierarchyStanding(pl.id);
+  body.HierarchyNotiInfo = {
+    __msg: 'Solis.Common.Proto.Api.HierarchyNotiInfo',
+    ...(body.HierarchyNotiInfo ?? {}),
+    CurrentDetailGradeId: standing.detailGradeId,
+    CurrentRank: standing.rank,
   };
 }
 
@@ -191,6 +209,24 @@ function applyNarrative(body: Decoded, narrative: Decoded | null, replaceAll: bo
     if (Array.isArray(value) && value.length > 0) updated[key] = value;
     else if (replaceAll) delete updated[key];
   }
+}
+
+/**
+ * Race block of `Home:Enter`: the `HomeEventInfo.RaceInfos` banner rows plus the
+ * first-visit race state of every open race (starting race points included in
+ * `CommonResponse.UpdatedData`). Runs in the player's transaction so the state
+ * and the item grant land together.
+ */
+async function applyRaceHomeEnter(
+  decoded: Decoded,
+  pl: { id: string } | null | undefined,
+): Promise<void> {
+  if (!pl) {
+    await applyActiveRaceToHomeEnter(decoded);
+    return;
+  }
+  const playerId = pl.id;
+  await withPlayerTx(playerId, (tx) => applyActiveRaceToHomeEnter(decoded, playerId, tx));
 }
 
 register('Home:Enter', async (ctx) => {
@@ -242,10 +278,12 @@ register('Home:Enter', async (ctx) => {
       if (pl && !isSandbox()) await applyPlayerActivityCatalogs(body, pl.id);
       await applySandboxEvents(body);
       applySandboxHomeButtons(body);
+      await applyPlayerHierarchyNoti(body, pl);
       if (pl) body.FriendAppliedCount = await countIncoming(pl.id);
       await dropSandboxToyGachas(body);
       if (pl) await applyBirthdayToHomeEnter(body, pl.id);
       applyActiveMarathonToHomeEnter(body);
+      await applyRaceHomeEnter(body, pl);
       applyNarrative(body, narrative, true);
       const w = new Writer();
       encodeMessage(HomeEnterResponse, body, w);
@@ -264,8 +302,10 @@ register('Home:Enter', async (ctx) => {
       ...(receivableGift === null ? {} : { HasReceivableGift: receivableGift }),
       LoveInfo: loveInfo,
     };
+    await applyPlayerHierarchyNoti(body, pl);
     if (pl) await applyBirthdayToHomeEnter(body, pl.id);
     applyActiveMarathonToHomeEnter(body);
+    await applyRaceHomeEnter(body, pl);
     applyNarrative(body, narrative, true);
     const w = new Writer();
     encodeMessage(HomeEnterResponse, body, w);
@@ -282,10 +322,12 @@ register('Home:Enter', async (ctx) => {
   if (pl && !isSandbox()) await applyPlayerActivityCatalogs(decoded, pl.id);
   await applySandboxEvents(decoded);
   applySandboxHomeButtons(decoded);
+  await applyPlayerHierarchyNoti(decoded, pl);
   if (pl) decoded.FriendAppliedCount = await countIncoming(pl.id);
   await dropSandboxToyGachas(decoded);
   if (pl) await applyBirthdayToHomeEnter(decoded, pl.id);
   applyActiveMarathonToHomeEnter(decoded);
+  await applyRaceHomeEnter(decoded, pl);
   applyNarrative(decoded, narrative, false);
   const w = new Writer();
   encodeMessage(HomeEnterResponse, decoded, w);

@@ -29,7 +29,7 @@ import { applyCardStats } from './card.ts';
 import { applyCardRelease, cardReleaseForCard } from './cardRelease.ts';
 import { unlockCardStories } from './cardStories.ts';
 import { ConditionEvaluator } from './conditions.ts';
-import { HIERARCHY_PRIVATE_SERVER_RANK, reconcileHierarchyNotification } from './hierarchy.ts';
+import { reconcileHierarchyNotification } from './hierarchy.ts';
 import { opponentInfoForRoster } from './opponent.ts';
 import { advanceUserMissions, MissionType, reachUserMissions } from './missionProgress.ts';
 import { getItemAmount, spendItem } from './inventory.ts';
@@ -1026,7 +1026,7 @@ register(
     return withQuestPlayer(ctx, 'Quest:Top', async (playerId) => {
       const updated = emptyUpdated();
       const catalog = await loadQuestCatalog(playerId, Date.now(), updated, db);
-      const hierarchy = await reconcileHierarchyNotification(playerId, HIERARCHY_PRIVATE_SERVER_RANK);
+      const hierarchy = await reconcileHierarchyNotification(playerId);
       if (hierarchy.hierarchy) updated.Hierarchy = hierarchy.hierarchy;
       return {
         __msg: QUEST_TOP_RESPONSE_MSG,

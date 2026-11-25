@@ -1,3 +1,7 @@
+// Portions of this file are derived from solis-server
+// (https://github.com/vertesan/solis-server), licensed under AGPL-3.0,
+// and were modified for sumire-sr. See NOTICE.
+
 // Proto-shaped values used by the live simulator.
 //
 // Field names, casing and numbers mirror the generated wire shapes in

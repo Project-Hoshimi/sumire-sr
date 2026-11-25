@@ -44,6 +44,40 @@ const SUPPORTED_SETTINGS = new Set([
 
 type Row = Record<string, unknown>;
 
+/**
+ * Whether a `Condition` row's `Settings` unlock by manager level alone.
+ *
+ * Used by the race area-quest tiers: their conditions are
+ * `[{}, {ManagerLevel: {LevelGte: 35}}]`, where the empty `ConditionSetting`
+ * stands for the race "previous tier cleared" rule (handled by the caller) and
+ * the `ManagerLevel` setting is the level gate. An empty setting is ignored;
+ * a condition with no `ManagerLevel` setting, or with any other setting kind,
+ * never counts as a manager-level unlock.
+ */
+export function managerLevelSettingsSatisfied(settings: unknown, managerLevel: number): boolean {
+  const list = Array.isArray(settings) ? (settings as unknown[]) : [];
+  let hasManagerLevel = false;
+  for (const entry of list) {
+    if (entry === null || typeof entry !== 'object' || Array.isArray(entry)) return false;
+    const setting = entry as Row;
+    if (Array.isArray(setting.__unknown) && setting.__unknown.length > 0) return false;
+    const fields = Object.keys(setting).filter(
+      (key) => !key.startsWith('__') && setting[key] != null,
+    );
+    // An empty ConditionSetting carries the previous-clear rule.
+    if (fields.length === 0) continue;
+    if (fields.length !== 1 || fields[0] !== 'ManagerLevel') return false;
+    const manager = setting.ManagerLevel;
+    if (manager === null || typeof manager !== 'object' || Array.isArray(manager)) return false;
+    const gte = Number((manager as Row).LevelGte ?? 0);
+    const lte = Number((manager as Row).LevelLte ?? 0);
+    if (gte <= 0 && lte <= 0) return false;
+    if ((gte > 0 && managerLevel < gte) || (lte > 0 && managerLevel > lte)) return false;
+    hasManagerLevel = true;
+  }
+  return hasManagerLevel;
+}
+
 export class ConditionEvaluator {
   private readonly playerId: string;
   private readonly now: number;
@@ -76,6 +110,20 @@ export class ConditionEvaluator {
 
   async satisfied(conditionId: string | null | undefined): Promise<boolean> {
     return (await this.evaluate(conditionId ?? '')) === SATISFIED;
+  }
+
+  /**
+   * Whether `conditionId` opens by manager level alone (see
+   * `managerLevelSettingsSatisfied`). Unlike `satisfied`, other setting kinds
+   * are not treated as alternatives: this is the manager-level gate used by
+   * the race area-quest tier rule.
+   */
+  async managerLevelUnlocked(conditionId: string | null | undefined): Promise<boolean> {
+    const id = conditionId ?? '';
+    if (id === '') return false;
+    const condition = await this.conditionRow(id);
+    if (!condition) return false;
+    return managerLevelSettingsSatisfied(condition.Settings, await this.loadManagerLevel());
   }
 
   /**
