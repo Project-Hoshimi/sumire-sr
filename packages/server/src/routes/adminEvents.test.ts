@@ -1,7 +1,7 @@
 // Admin event/schedule API tests. Unit-level: memory admin + event stores and
-// `fastify.inject`, so no listener is needed. `import-from-master` does read
-// master rows through the shared Drizzle pool, so these tests need the
-// configured Postgres and close the pool when the file finishes.
+// `fastify.inject`, so no listener is needed. The route's master importer is
+// injected, so import-from-master stays off Postgres; the pool is only closed
+// here for the files that share it.
 //
 //   node --test src/routes/adminEvents.test.ts
 import assert from 'node:assert/strict';
@@ -22,6 +22,7 @@ import {
 } from '../services/events/registry.ts';
 import { registerEventPlugin } from '../services/events/plugin.ts';
 import { memoryMarathonPlayerStateReader } from '../services/events/preview.ts';
+import { deriveMarathonDraft } from '../services/marathon/importDraft.ts';
 import { memoryEventStore, type EventStore } from '../services/events/store.ts';
 import { client as dbClient } from '../db/client.ts';
 import { catalogDrafts as moshikoiCatalogDrafts } from '../services/moshikoi/catalog.ts';
@@ -54,6 +55,17 @@ function makeApp(store: EventStore & { reset(): void } = memoryEventStore()): Te
   app.register(adminEventRoutes, {
     admin: { store: adminStore },
     players: memoryMarathonPlayerStateReader([]),
+    // An in-memory master importer keeps import-from-master off Postgres.
+    importFromMaster: async (kind, eventId) => {
+      if (kind !== 'marathon') throw new Error(`no test importer for kind ${kind}`);
+      return deriveMarathonDraft(eventId, {
+        eventStoryAssetIdExists: false,
+        eventMission: null,
+        raidQuestName: null,
+        boxGachaGroupId: '',
+        existingItemIds: [],
+      });
+    },
   });
   return { app, adminStore, eventStore };
 }

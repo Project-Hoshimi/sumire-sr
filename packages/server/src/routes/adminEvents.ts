@@ -43,6 +43,8 @@ export interface AdminEventRouteDeps {
   admin: AdminRouteDeps;
   /** Player-state reader used by preview/publish; production defaults to Drizzle. */
   players?: MarathonPlayerStateReader;
+  /** Master-data fetch used by import-from-master; production defaults to the plugin. */
+  importFromMaster?: (kind: string, eventId: string) => Promise<unknown>;
 }
 
 /** Map a registry service error onto the admin API response; false when unhandled. */
@@ -339,7 +341,10 @@ export const adminEventRoutes: FastifyPluginAsync<AdminEventRouteDeps> = async (
       return reply.code(400).send({ error: 'eventId is required' });
     }
     try {
-      const definition = await importEventFromMaster(kind, eventId, { by: req.adminUser!.id });
+      const definition = await importEventFromMaster(kind, eventId, {
+        by: req.adminUser!.id,
+        importFromMaster: opts.importFromMaster,
+      });
       return reply.code(201).send({
         id: definition.id,
         kind: definition.kind,

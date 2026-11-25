@@ -923,11 +923,19 @@ export async function createEventDefinition(input: {
 export async function importEventFromMaster(
   kind: string,
   eventId: string,
-  opts: { by?: string | null } = {},
+  opts: {
+    by?: string | null;
+    /** Replaces the plugin's master-data fetch; tests use it to stay off Postgres. */
+    importFromMaster?: (kind: string, eventId: string) => Promise<unknown>;
+  } = {},
 ): Promise<EventDefinitionRow> {
   const plugin = eventPlugin(kind);
   if (!plugin) throw new UnknownEventKindError(eventId, kind);
-  const draft = plugin.parseDraft(await plugin.importFromMaster(eventId));
+  const draft = plugin.parseDraft(
+    await (opts.importFromMaster
+      ? opts.importFromMaster(kind, eventId)
+      : plugin.importFromMaster(eventId)),
+  );
   const id = plugin.draftId(draft);
   const activeStore = requireStore();
   if (await activeStore.getDefinition(id)) throw new EventDefinitionExistsError(id);
